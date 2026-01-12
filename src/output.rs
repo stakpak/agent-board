@@ -1,0 +1,185 @@
+use crate::models::*;
+use tabled::{Table, Tabled, settings::Style};
+
+#[derive(Tabled)]
+struct CardRow {
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Status")]
+    status: String,
+    #[tabled(rename = "Assigned To")]
+    assigned_to: String,
+    #[tabled(rename = "Board")]
+    board_id: String,
+}
+
+#[derive(Tabled)]
+struct BoardRow {
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Description")]
+    description: String,
+}
+
+#[derive(Tabled)]
+struct CommentRow {
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Author")]
+    author: String,
+    #[tabled(rename = "Text")]
+    text: String,
+    #[tabled(rename = "Created")]
+    created_at: String,
+}
+
+pub fn print_cards(cards: &[&Card], format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&cards).unwrap());
+        }
+        OutputFormat::Table => {
+            if cards.is_empty() {
+                println!("No cards found.");
+                return;
+            }
+            let rows: Vec<CardRow> = cards.iter().map(|c| CardRow {
+                id: c.id.clone(),
+                name: truncate(&c.name, 40),
+                status: c.status.to_string(),
+                assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
+                board_id: c.board_id.clone(),
+            }).collect();
+            let table = Table::new(rows).with(Style::rounded()).to_string();
+            println!("{}", table);
+        }
+        OutputFormat::Simple => {
+            for card in cards {
+                println!("{}", card.id);
+            }
+        }
+    }
+}
+
+pub fn print_card(card: &Card, format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&card).unwrap());
+        }
+        OutputFormat::Table => {
+            println!("Card: {}", card.id);
+            println!("Name: {}", card.name);
+            println!("Board: {}", card.board_id);
+            println!("Status: {}", card.status);
+            println!("Assigned To: {}", card.assigned_to.as_deref().unwrap_or("-"));
+            if let Some(desc) = &card.description {
+                println!("Description: {}", desc);
+            }
+            if !card.tags.is_empty() {
+                println!("Tags: {}", card.tags.join(", "));
+            }
+            for checklist in &card.checklists {
+                println!("\nChecklist: {} ({})", checklist.name, checklist.id);
+                for item in &checklist.items {
+                    let check = if item.checked { "x" } else { " " };
+                    println!("  [{}] {} ({})", check, item.text, item.id);
+                }
+            }
+        }
+        OutputFormat::Simple => {
+            println!("{}", card.id);
+        }
+    }
+}
+
+pub fn print_boards(boards: &[Board], format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&boards).unwrap());
+        }
+        OutputFormat::Table => {
+            if boards.is_empty() {
+                println!("No boards found.");
+                return;
+            }
+            let rows: Vec<BoardRow> = boards.iter().map(|b| BoardRow {
+                id: b.id.clone(),
+                name: b.name.clone(),
+                description: b.description.clone().unwrap_or_else(|| "-".to_string()),
+            }).collect();
+            let table = Table::new(rows).with(Style::rounded()).to_string();
+            println!("{}", table);
+        }
+        OutputFormat::Simple => {
+            for board in boards {
+                println!("{}", board.id);
+            }
+        }
+    }
+}
+
+pub fn print_board(board: &Board, summary: &BoardSummary, format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            let output = serde_json::json!({
+                "board": board,
+                "summary": summary
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        OutputFormat::Table => {
+            println!("Board: {}", board.id);
+            println!("Name: {}", board.name);
+            if let Some(desc) = &board.description {
+                println!("Description: {}", desc);
+            }
+            println!("\nSummary:");
+            println!("  Todo: {}", summary.todo_count);
+            println!("  In Progress: {}", summary.in_progress_count);
+            println!("  Done: {}", summary.done_count);
+            println!("  Total: {}", summary.total_cards);
+        }
+        OutputFormat::Simple => {
+            println!("{}", board.id);
+        }
+    }
+}
+
+pub fn print_comments(comments: &[&Comment], format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&comments).unwrap());
+        }
+        OutputFormat::Table => {
+            if comments.is_empty() {
+                println!("No comments found.");
+                return;
+            }
+            let rows: Vec<CommentRow> = comments.iter().map(|c| CommentRow {
+                id: c.id.clone(),
+                author: c.author.clone().unwrap_or_else(|| "-".to_string()),
+                text: truncate(&c.text, 50),
+                created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            }).collect();
+            let table = Table::new(rows).with(Style::rounded()).to_string();
+            println!("{}", table);
+        }
+        OutputFormat::Simple => {
+            for comment in comments {
+                println!("{}", comment.id);
+            }
+        }
+    }
+}
+
+fn truncate(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len - 3])
+    }
+}

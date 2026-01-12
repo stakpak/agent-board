@@ -1,0 +1,7 @@
+# Stakpak session files
+.stakpak/session*
+
+
+# Added by cargo
+
+/target

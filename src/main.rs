@@ -1,0 +1,165 @@
+mod cli;
+mod db;
+mod models;
+mod output;
+
+use cli::{Cli, Commands, CardCommands, ChecklistCommands, CommentCommands, BoardCommands};
+use clap::Parser;
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    
+    match run(cli) {
+        Ok(()) => ExitCode::from(0),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            e.exit_code()
+        }
+    }
+}
+
+fn run(cli: Cli) -> Result<(), TaskboardError> {
+    let mut db = db::Database::load(&cli)?;
+    let default_format = cli.format.clone();
+    let quiet = cli.quiet;
+    let session_id_result = cli.get_session_id();
+    
+    match cli.command {
+        Commands::Mine { board, status, format } => {
+            let session_id = session_id_result?;
+            let cards = db.get_cards_by_assignee(&session_id, board.as_deref(), status)?;
+            output::print_cards(&cards, format.unwrap_or(default_format));
+        }
+        Commands::Card { command } => match command {
+            CardCommands::Get { card_id, format } => {
+                let card = db.get_card(&card_id)?;
+                output::print_card(card, format.unwrap_or(default_format));
+            }
+            CardCommands::List { board_id, status, assigned_to, format } => {
+                let cards = db.list_cards(&board_id, status, assigned_to.as_deref())?;
+                output::print_cards(&cards, format.unwrap_or(default_format));
+            }
+            CardCommands::Create { board_id, name, description, status } => {
+                let card = db.create_card(&board_id, name, description, status)?;
+                if !quiet {
+                    println!("Created card: {}", card.id);
+                }
+            }
+            CardCommands::Update { card_id, name, description, status, agent_session_id, add_tag, remove_tag } => {
+                let session_id = match &agent_session_id {
+                    Some(s) if s == "null" => Some(None), // explicit unassign
+                    Some(s) => Some(Some(s.clone())),     // explicit assign
+                    None => {
+                        // Use env var session ID if status is being changed to in_progress
+                        if status == Some(models::Status::InProgress) {
+                            Some(Some(std::env::var("TASKBOARD_SESSION_ID")
+                                .map_err(|_| TaskboardError::InvalidArgs("TASKBOARD_SESSION_ID environment variable not set".into()))?))
+                        } else {
+                            None // no change to assignment
+                        }
+                    }
+                };
+                let update = models::CardUpdate {
+                    name,
+                    description,
+                    status,
+                    session_id,
+                    add_tags: add_tag,
+                    remove_tags: remove_tag,
+                };
+                db.update_card(&card_id, update)?;
+                if !quiet {
+                    println!("Updated card: {}", card_id);
+                }
+            }
+        },
+        Commands::Checklist { command } => match command {
+            ChecklistCommands::Add { card_id, name, item } => {
+                let checklist = db.add_checklist(&card_id, name, item)?;
+                if !quiet {
+                    println!("Added checklist: {}", checklist.id);
+                }
+            }
+            ChecklistCommands::Check { item_id, uncheck } => {
+                db.check_item(&item_id, !uncheck)?;
+                if !quiet {
+                    println!("{} item: {}", if uncheck { "Unchecked" } else { "Checked" }, item_id);
+                }
+            }
+        },
+        Commands::Comment { command } => match command {
+            CommentCommands::Add { card_id, text, file } => {
+                let content = if let Some(path) = file {
+                    std::fs::read_to_string(&path)
+                        .map_err(|e| TaskboardError::General(format!("Failed to read file: {}", e)))?
+                } else {
+                    text.ok_or(TaskboardError::InvalidArgs("Either text or --file required".into()))?
+                };
+                let session_id = std::env::var("TASKBOARD_SESSION_ID").ok();
+                let comment = db.add_comment(&card_id, content, session_id)?;
+                if !quiet {
+                    println!("Added comment: {}", comment.id);
+                }
+            }
+            CommentCommands::List { card_id, format } => {
+                let comments = db.list_comments(&card_id)?;
+                output::print_comments(&comments, format.unwrap_or(default_format));
+            }
+        },
+        Commands::Board { command } => match command {
+            BoardCommands::Get { board_id, format } => {
+                let board = db.get_board(&board_id)?;
+                let summary = db.get_board_summary(&board_id)?;
+                output::print_board(board, &summary, format.unwrap_or(default_format));
+            }
+            BoardCommands::List { format } => {
+                let boards = db.list_boards();
+                output::print_boards(boards, format.unwrap_or(default_format));
+            }
+            BoardCommands::Create { name, description } => {
+                let board = db.create_board(name, description)?;
+                if !quiet {
+                    println!("Created board: {}", board.id);
+                }
+            }
+        },
+    }
+    
+    db.save()?;
+    Ok(())
+}
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum TaskboardError {
+    #[error("{0}")]
+    General(String),
+    #[error("Invalid arguments: {0}")]
+    InvalidArgs(String),
+    #[error("Not found: {0}")]
+    NotFound(String),
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
+    #[error("Session conflict: {0}")]
+    SessionConflict(String),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+impl TaskboardError {
+    pub fn exit_code(&self) -> ExitCode {
+        match self {
+            TaskboardError::General(_) => ExitCode::from(1),
+            TaskboardError::InvalidArgs(_) => ExitCode::from(2),
+            TaskboardError::NotFound(_) => ExitCode::from(4),
+            TaskboardError::PermissionDenied(_) => ExitCode::from(5),
+            TaskboardError::SessionConflict(_) => ExitCode::from(6),
+            TaskboardError::Io(_) => ExitCode::from(1),
+            TaskboardError::Json(_) => ExitCode::from(1),
+        }
+    }
+}
