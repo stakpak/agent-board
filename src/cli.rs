@@ -104,6 +104,10 @@ pub enum CardCommands {
         #[arg(long)]
         assigned_to: Option<String>,
 
+        /// Filter by tag (repeatable, cards must have ALL specified tags)
+        #[arg(long)]
+        tag: Vec<String>,
+
         /// Include soft-deleted cards
         #[arg(long)]
         include_deleted: bool,

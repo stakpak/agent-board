@@ -284,7 +284,7 @@ impl Database {
         self.load_card_full(card_id).await
     }
 
-    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>, include_deleted: bool) -> Result<Vec<Card>, AgentBoardError> {
+    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>, tags: &[String], include_deleted: bool) -> Result<Vec<Card>, AgentBoardError> {
         // Verify board exists (allow deleted boards when include_deleted is true)
         if include_deleted {
             // Check if board exists at all (including deleted)
@@ -300,27 +300,38 @@ impl Database {
         }
 
         let deleted_filter = if include_deleted { "" } else { " AND deleted_at IS NULL" };
+        
+        // Build tag filter using subquery for AND logic (card must have ALL specified tags)
+        let tag_filter = if tags.is_empty() {
+            String::new()
+        } else {
+            let tag_conditions: Vec<String> = tags.iter()
+                .map(|t| format!("EXISTS (SELECT 1 FROM card_tags WHERE card_id = cards.id AND tag = '{}')", t))
+                .collect();
+            format!(" AND {}", tag_conditions.join(" AND "))
+        };
+        
         let query = match (&status, &assigned_to) {
             (Some(s), Some(a)) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}' AND assigned_to = '{}'{}",
-                    board_id, s, a, deleted_filter
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}' AND assigned_to = '{}'{}{}",
+                    board_id, s, a, deleted_filter, tag_filter
                 )
             }
             (Some(s), None) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}'{}",
-                    board_id, s, deleted_filter
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}'{}{}",
+                    board_id, s, deleted_filter, tag_filter
                 )
             }
             (None, Some(a)) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND assigned_to = '{}'{}",
-                    board_id, a, deleted_filter
+                    "SELECT id FROM cards WHERE board_id = '{}' AND assigned_to = '{}'{}{}",
+                    board_id, a, deleted_filter, tag_filter
                 )
             }
             (None, None) => {
-                format!("SELECT id FROM cards WHERE board_id = '{}'{}",  board_id, deleted_filter)
+                format!("SELECT id FROM cards WHERE board_id = '{}'{}{}",  board_id, deleted_filter, tag_filter)
             }
         };
 

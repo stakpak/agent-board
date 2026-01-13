@@ -42,8 +42,8 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let comments = db.list_comments(&card_id).await?;
                 output::print_card(&card, &comments, format.unwrap_or(default_format));
             }
-            CardCommands::List { board_id, status, assigned_to, include_deleted, format } => {
-                let cards = db.list_cards(&board_id, status, assigned_to.as_deref(), include_deleted).await?;
+            CardCommands::List { board_id, status, assigned_to, tag, include_deleted, format } => {
+                let cards = db.list_cards(&board_id, status, assigned_to.as_deref(), &tag, include_deleted).await?;
                 output::print_cards(&cards, format.unwrap_or(default_format));
             }
             CardCommands::Create { board_id, name, description, status } => {

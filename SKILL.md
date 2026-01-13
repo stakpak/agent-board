@@ -38,6 +38,7 @@ agent-board board get <board_id>
 # Card operations
 agent-board card create <board_id> "Task name" --description "Details" --status todo
 agent-board card list <board_id> [--status todo|in-progress|pending-review|done]
+agent-board card list <board_id> --tag blocked --tag needs-human  # Filter by tags (AND logic)
 agent-board card get <card_id>
 agent-board card update <card_id> --status in-progress --assign-to-me
 agent-board card update <card_id> --status pending-review
@@ -215,6 +216,61 @@ agent-board card update card_123 --remove-tag urgent
 | 5 | Permission denied |
 | 6 | Session conflict |
 
+## Human Review (Optional)
+
+Cards can flow directly from `in-progress` → `done` without review. Use these mechanisms only when human input is needed.
+
+### Two Distinct Scenarios
+
+| Scenario | Mechanism | When to Use |
+|----------|-----------|-------------|
+| **Blocked** | `--add-tag blocked --add-tag needs-human` | You cannot continue without human input (approval, decision, clarification) |
+| **Review requested** | `--status pending-review` | Work is complete, but you want human verification before marking done |
+
+**These are different situations:**
+- `blocked` + `needs-human` = "I'm stuck mid-work and need human help to proceed"
+- `pending-review` = "I finished the work, please verify before I close this out"
+
+### When You're Blocked
+
+Use when you **cannot continue** without human input:
+
+```bash
+# You need approval before proceeding
+agent-board card update card_123 --add-tag blocked --add-tag needs-human
+agent-board comment add card_123 "BLOCKED: Need approval on cost estimate before provisioning infrastructure"
+
+# After human responds, they will remove the tags
+# Check your cards to see if you've been unblocked:
+agent-board mine --status in-progress
+```
+
+### When You Want Review (Optional)
+
+Use when work is **complete** but you want human verification:
+
+```bash
+# Request review on completed work
+agent-board card update card_123 --status pending-review
+agent-board comment add card_123 "Ready for review: Please verify terraform plan output"
+
+# Human will either:
+# - Move to done (approved)
+# - Move back to in-progress with feedback
+```
+
+**Note:** If you're confident the work is correct, you can skip review and go directly to `done`.
+
+### Common Tags
+
+| Tag | Meaning |
+|-----|---------|
+| `blocked` | Cannot proceed - waiting on something |
+| `needs-human` | The blocker requires human attention (vs waiting on another agent or external event) |
+| `expedite` | Urgent, need fast turnaround |
+| `security-review` | Needs security sign-off |
+| `cost-approval` | Needs cost/budget approval |
+
 ## Best Practices for Agents
 
 1. **Always set AGENT_BOARD_SESSION_ID** before starting work
@@ -225,6 +281,8 @@ agent-board card update card_123 --remove-tag urgent
 6. **Keep assignment on completion** - Don't unassign when marking done (preserves history)
 7. **Check `agent-board mine`** at session start to see pending work
 8. **Use `--format json`** when you need to parse output programmatically
+9. **Use `blocked` + `needs-human` tags** when you cannot continue without human input
+10. **Use `pending-review` status** when work is done but you want human verification (optional)
 
 ### Cards vs Checklists: Kanban Thinking
 

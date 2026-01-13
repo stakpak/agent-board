@@ -56,6 +56,8 @@ agent-board board create "Name"           # Create a new board
 # Card commands
 agent-board mine                          # Get all cards assigned to you
 agent-board card list <board_id>          # List cards on a board
+agent-board card list <board_id> --tag blocked  # Filter by tag
+agent-board card list <board_id> --tag blocked --tag needs-human  # Multiple tags (AND)
 agent-board card get <card_id>            # Get full card details
 agent-board card create <board_id> "Name" # Create a new card
 agent-board card update <card_id> ...     # Update card fields (name, status, tags, assignee)
@@ -69,6 +71,52 @@ agent-board checklist check <item_id> --uncheck  # Mark item as not done
 agent-board comment add <card_id> "text"  # Add a comment to a card
 agent-board comment list <card_id>        # List all comments on a card
 ```
+
+## Human Review Workflow
+
+Agents may request human input in two distinct situations:
+
+### Two Types of Requests
+
+| Type | What It Means | How to Find |
+|------|---------------|-------------|
+| **Blocked** | Agent cannot continue without your input (approval, decision, clarification) | `card list <board> --tag needs-human` |
+| **Review requested** | Agent finished work and wants verification before closing (optional) | `card list <board> --status pending-review` |
+
+**Note:** Agents can complete work without review - `pending-review` is optional. The `blocked` + `needs-human` tags indicate the agent is stuck and waiting.
+
+### Responding to Requests
+
+```bash
+# Find cards needing your attention
+agent-board card list board_123 --tag needs-human      # Blocked agents
+agent-board card list board_123 --status pending-review # Optional reviews
+
+# Review a card
+agent-board card get card_123
+
+# Unblock a stuck agent (they will continue working)
+agent-board card update card_123 --remove-tag blocked --remove-tag needs-human
+agent-board comment add card_123 "APPROVED: Proceed with migration"
+
+# Approve completed work in review
+agent-board card update card_123 --status done
+agent-board comment add card_123 "Approved - looks good"
+
+# Request changes on reviewed work
+agent-board card update card_123 --status in-progress
+agent-board comment add card_123 "Needs changes: reduce instance size"
+```
+
+### Common Tags
+
+| Tag | Meaning |
+|-----|---------|
+| `blocked` | Cannot proceed - waiting on something |
+| `needs-human` | The blocker requires human attention (vs another agent or external event) |
+| `expedite` | Urgent, needs fast turnaround |
+| `security-review` | Needs security sign-off |
+| `cost-approval` | Needs cost/budget approval |
 
 ## License
 
