@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS boards (
     name TEXT NOT NULL,
     description TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
 );
 
 -- Cards table
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS cards (
     assigned_to TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    deleted_at TEXT,
     FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE
 );
 

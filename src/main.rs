@@ -42,8 +42,8 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let comments = db.list_comments(&card_id).await?;
                 output::print_card(&card, &comments, format.unwrap_or(default_format));
             }
-            CardCommands::List { board_id, status, assigned_to, format } => {
-                let cards = db.list_cards(&board_id, status, assigned_to.as_deref()).await?;
+            CardCommands::List { board_id, status, assigned_to, include_deleted, format } => {
+                let cards = db.list_cards(&board_id, status, assigned_to.as_deref(), include_deleted).await?;
                 output::print_cards(&cards, format.unwrap_or(default_format));
             }
             CardCommands::Create { board_id, name, description, status } => {
@@ -82,6 +82,12 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 db.update_card(&card_id, update).await?;
                 if !quiet {
                     println!("Updated card: {}", card_id);
+                }
+            }
+            CardCommands::Delete { card_id } => {
+                db.delete_card(&card_id).await?;
+                if !quiet {
+                    println!("Deleted card: {}", card_id);
                 }
             }
         },
@@ -124,14 +130,20 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let summary = db.get_board_summary(&board_id).await?;
                 output::print_board(&board, &summary, format.unwrap_or(default_format));
             }
-            BoardCommands::List { format } => {
-                let boards = db.list_boards().await?;
+            BoardCommands::List { include_deleted, format } => {
+                let boards = db.list_boards(include_deleted).await?;
                 output::print_boards(&boards, format.unwrap_or(default_format));
             }
             BoardCommands::Create { name, description } => {
                 let board = db.create_board(name, description).await?;
                 if !quiet {
                     println!("Created board: {}", board.id);
+                }
+            }
+            BoardCommands::Delete { board_id } => {
+                db.delete_board(&board_id).await?;
+                if !quiet {
+                    println!("Deleted board: {}", board_id);
                 }
             }
         },

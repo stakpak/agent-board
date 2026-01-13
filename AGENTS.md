@@ -31,10 +31,11 @@ src/
 - Uses clap derive macros
 
 ### models.rs
-- `Status` enum: `Todo`, `InProgress`, `Done` (serde snake_case)
+- `Status` enum: `Todo`, `InProgress`, `PendingReview`, `Done` (serde snake_case)
 - `OutputFormat` enum: `Json`, `Table`, `Simple`
 - `CardUpdate` struct for update operations (avoids too-many-args clippy warning)
 - `Board`, `Card`, `Checklist`, `ChecklistItem`, `Comment` structs
+- `Board` and `Card` have `deleted_at: Option<DateTime<Utc>>` for soft delete
 - `AgentBoardData` holds all entities for JSON serialization
 
 ### db.rs
@@ -46,6 +47,7 @@ src/
 
 ### schema.sql
 - SQLite schema with tables: `boards`, `cards`, `card_tags`, `checklists`, `checklist_items`, `comments`
+- `boards` and `cards` tables have `deleted_at TEXT` column for soft delete
 - Foreign keys with `ON DELETE CASCADE`
 - Indexes for common queries (board_id, status, assigned_to)
 
@@ -54,6 +56,7 @@ src/
 - Uses `tabled` crate for table output
 - JSON output via `serde_json::to_string_pretty`
 - Simple output: just IDs, one per line
+- Deleted items show `[DELETED]` suffix in table output
 
 ## Dependencies
 
@@ -124,10 +127,41 @@ cargo clippy
 | 5 | `PermissionDenied` | Permission denied |
 | 6 | `SessionConflict` | Session conflict |
 
+## Soft Delete
+
+Boards and cards support soft delete - records are marked with `deleted_at` timestamp rather than being permanently removed.
+
+### Delete Commands
+```bash
+# Delete a card (soft delete)
+./target/debug/agent-board card delete <card_id>
+
+# Delete a board (soft delete, cascades to all cards in board)
+./target/debug/agent-board board delete <board_id>
+```
+
+### Viewing Deleted Items
+```bash
+# List boards including deleted ones
+./target/debug/agent-board board list --include-deleted
+
+# List cards including deleted ones (works even on deleted boards)
+./target/debug/agent-board card list <board_id> --include-deleted
+```
+
+Deleted items display with `[DELETED]` suffix in table output.
+
+### Implementation Notes
+- All list/get queries filter `WHERE deleted_at IS NULL` by default
+- Board deletion cascades: soft-deletes all cards in that board
+- `--include-deleted` flag bypasses the filter to show all records
+- Data is preserved in DB for potential recovery (restore not yet implemented)
+
 ## Future Improvements
 
 - [ ] Add `--filter` for more flexible queries
-- [ ] Add `card delete` command
-- [ ] Add `board delete` command
+- [x] Add `card delete` command
+- [x] Add `board delete` command
+- [ ] Add `card restore` / `board restore` commands
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations

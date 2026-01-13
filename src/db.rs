@@ -74,9 +74,14 @@ impl Database {
     }
 
     // Board operations
-    pub async fn list_boards(&self) -> Result<Vec<Board>, AgentBoardError> {
+    pub async fn list_boards(&self, include_deleted: bool) -> Result<Vec<Board>, AgentBoardError> {
+        let query = if include_deleted {
+            "SELECT id, name, description, created_at, updated_at, deleted_at FROM boards ORDER BY created_at DESC"
+        } else {
+            "SELECT id, name, description, created_at, updated_at, deleted_at FROM boards WHERE deleted_at IS NULL ORDER BY created_at DESC"
+        };
         let mut rows = self.conn
-            .query("SELECT id, name, description, created_at, updated_at FROM boards ORDER BY created_at DESC", ())
+            .query(query, ())
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
@@ -88,6 +93,7 @@ impl Database {
                 description: row.get::<Option<String>>(2).ok().flatten(),
                 created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
                 updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
+                deleted_at: row.get::<Option<String>>(5).ok().flatten().map(|s| Self::parse_datetime(&s)),
             });
         }
         Ok(boards)
@@ -95,7 +101,7 @@ impl Database {
 
     pub async fn get_board(&self, board_id: &str) -> Result<Board, AgentBoardError> {
         let mut rows = self.conn
-            .query("SELECT id, name, description, created_at, updated_at FROM boards WHERE id = ?1", [board_id])
+            .query("SELECT id, name, description, created_at, updated_at, deleted_at FROM boards WHERE id = ?1 AND deleted_at IS NULL", [board_id])
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
@@ -106,10 +112,36 @@ impl Database {
                 description: row.get::<Option<String>>(2).ok().flatten(),
                 created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
                 updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
+                deleted_at: row.get::<Option<String>>(5).ok().flatten().map(|s| Self::parse_datetime(&s)),
             })
         } else {
             Err(AgentBoardError::NotFound(format!("Board not found: {}", board_id)))
         }
+    }
+
+    pub async fn delete_board(&self, board_id: &str) -> Result<(), AgentBoardError> {
+        // Verify board exists
+        self.get_board(board_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE boards SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+                [&now, board_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete failed: {}", e)))?;
+
+        // Soft delete all cards in this board
+        self.conn
+            .execute(
+                "UPDATE cards SET deleted_at = ?1, updated_at = ?1 WHERE board_id = ?2 AND deleted_at IS NULL",
+                [&now, board_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete cards failed: {}", e)))?;
+
+        Ok(())
     }
 
     pub async fn create_board(&self, name: String, description: Option<String>) -> Result<Board, AgentBoardError> {
@@ -133,7 +165,7 @@ impl Database {
 
         let mut rows = self.conn
             .query(
-                "SELECT status, COUNT(*) as cnt FROM cards WHERE board_id = ?1 GROUP BY status",
+                "SELECT status, COUNT(*) as cnt FROM cards WHERE board_id = ?1 AND deleted_at IS NULL GROUP BY status",
                 [board_id],
             )
             .await
@@ -157,11 +189,17 @@ impl Database {
 
     // Card operations - helper to load full card with tags and checklists
     async fn load_card_full(&self, card_id: &str) -> Result<Card, AgentBoardError> {
+        self.load_card_full_with_deleted(card_id, false).await
+    }
+
+    async fn load_card_full_with_deleted(&self, card_id: &str, include_deleted: bool) -> Result<Card, AgentBoardError> {
+        let query = if include_deleted {
+            "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at, deleted_at FROM cards WHERE id = ?1"
+        } else {
+            "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at, deleted_at FROM cards WHERE id = ?1 AND deleted_at IS NULL"
+        };
         let mut rows = self.conn
-            .query(
-                "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at FROM cards WHERE id = ?1",
-                [card_id],
-            )
+            .query(query, [card_id])
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
@@ -177,6 +215,7 @@ impl Database {
         let assigned_to: Option<String> = row.get::<Option<String>>(5).ok().flatten();
         let created_at = Self::parse_datetime(&row.get::<String>(6).unwrap_or_default());
         let updated_at = Self::parse_datetime(&row.get::<String>(7).unwrap_or_default());
+        let deleted_at: Option<DateTime<Utc>> = row.get::<Option<String>>(8).ok().flatten().map(|s| Self::parse_datetime(&s));
 
         // Load tags
         let mut tag_rows = self.conn
@@ -202,6 +241,7 @@ impl Database {
             checklists,
             created_at,
             updated_at,
+            deleted_at,
         })
     }
 
@@ -244,31 +284,43 @@ impl Database {
         self.load_card_full(card_id).await
     }
 
-    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>) -> Result<Vec<Card>, AgentBoardError> {
-        // Verify board exists
-        self.get_board(board_id).await?;
+    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>, include_deleted: bool) -> Result<Vec<Card>, AgentBoardError> {
+        // Verify board exists (allow deleted boards when include_deleted is true)
+        if include_deleted {
+            // Check if board exists at all (including deleted)
+            let mut rows = self.conn
+                .query("SELECT id FROM boards WHERE id = ?1", [board_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+            if rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?.is_none() {
+                return Err(AgentBoardError::NotFound(format!("Board not found: {}", board_id)));
+            }
+        } else {
+            self.get_board(board_id).await?;
+        }
 
+        let deleted_filter = if include_deleted { "" } else { " AND deleted_at IS NULL" };
         let query = match (&status, &assigned_to) {
             (Some(s), Some(a)) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}' AND assigned_to = '{}'",
-                    board_id, s, a
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}' AND assigned_to = '{}'{}",
+                    board_id, s, a, deleted_filter
                 )
             }
             (Some(s), None) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}'",
-                    board_id, s
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}'{}",
+                    board_id, s, deleted_filter
                 )
             }
             (None, Some(a)) => {
                 format!(
-                    "SELECT id FROM cards WHERE board_id = '{}' AND assigned_to = '{}'",
-                    board_id, a
+                    "SELECT id FROM cards WHERE board_id = '{}' AND assigned_to = '{}'{}",
+                    board_id, a, deleted_filter
                 )
             }
             (None, None) => {
-                format!("SELECT id FROM cards WHERE board_id = '{}'", board_id)
+                format!("SELECT id FROM cards WHERE board_id = '{}'{}",  board_id, deleted_filter)
             }
         };
 
@@ -280,7 +332,7 @@ impl Database {
         let mut cards = Vec::new();
         while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
             let card_id: String = row.get(0).unwrap_or_default();
-            cards.push(self.load_card_full(&card_id).await?);
+            cards.push(self.load_card_full_with_deleted(&card_id, include_deleted).await?);
         }
         Ok(cards)
     }
@@ -289,24 +341,24 @@ impl Database {
         let query = match (&board_id, &status) {
             (Some(b), Some(s)) => {
                 format!(
-                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}' AND status = '{}'",
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}' AND status = '{}' AND deleted_at IS NULL",
                     session_id, b, s
                 )
             }
             (Some(b), None) => {
                 format!(
-                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}'",
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}' AND deleted_at IS NULL",
                     session_id, b
                 )
             }
             (None, Some(s)) => {
                 format!(
-                    "SELECT id FROM cards WHERE assigned_to = '{}' AND status = '{}'",
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND status = '{}' AND deleted_at IS NULL",
                     session_id, s
                 )
             }
             (None, None) => {
-                format!("SELECT id FROM cards WHERE assigned_to = '{}'", session_id)
+                format!("SELECT id FROM cards WHERE assigned_to = '{}' AND deleted_at IS NULL", session_id)
             }
         };
 
@@ -398,6 +450,22 @@ impl Database {
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Delete tag failed: {}", e)))?;
         }
+
+        Ok(())
+    }
+
+    pub async fn delete_card(&self, card_id: &str) -> Result<(), AgentBoardError> {
+        // Verify card exists
+        self.get_card(card_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE cards SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+                [&now, card_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete failed: {}", e)))?;
 
         Ok(())
     }

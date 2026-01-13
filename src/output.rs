@@ -51,13 +51,16 @@ pub fn print_cards(cards: &[Card], format: OutputFormat) {
                 println!("No cards found.");
                 return;
             }
-            let rows: Vec<CardRow> = cards.iter().map(|c| CardRow {
-                id: c.id.clone(),
-                name: truncate(&c.name, 40),
-                status: c.status.to_string(),
-                assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
-                board_id: c.board_id.clone(),
-                created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            let rows: Vec<CardRow> = cards.iter().map(|c| {
+                let deleted_marker = if c.deleted_at.is_some() { " [DELETED]" } else { "" };
+                CardRow {
+                    id: c.id.clone(),
+                    name: format!("{}{}", truncate(&c.name, 35), deleted_marker),
+                    status: c.status.to_string(),
+                    assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
+                    board_id: c.board_id.clone(),
+                    created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                }
             }).collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);
@@ -126,11 +129,14 @@ pub fn print_boards(boards: &[Board], format: OutputFormat) {
                 println!("No boards found.");
                 return;
             }
-            let rows: Vec<BoardRow> = boards.iter().map(|b| BoardRow {
-                id: b.id.clone(),
-                name: b.name.clone(),
-                description: b.description.clone().unwrap_or_else(|| "-".to_string()),
-                created_at: b.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            let rows: Vec<BoardRow> = boards.iter().map(|b| {
+                let deleted_marker = if b.deleted_at.is_some() { " [DELETED]" } else { "" };
+                BoardRow {
+                    id: b.id.clone(),
+                    name: format!("{}{}", b.name, deleted_marker),
+                    description: b.description.clone().unwrap_or_else(|| "-".to_string()),
+                    created_at: b.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                }
             }).collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);

@@ -104,6 +104,10 @@ pub enum CardCommands {
         #[arg(long)]
         assigned_to: Option<String>,
 
+        /// Include soft-deleted cards
+        #[arg(long)]
+        include_deleted: bool,
+
         /// Output format
         #[arg(long)]
         format: Option<OutputFormat>,
@@ -158,6 +162,12 @@ pub enum CardCommands {
         /// Remove tag (repeatable)
         #[arg(long)]
         remove_tag: Vec<String>,
+    },
+
+    /// Delete a card (soft delete)
+    Delete {
+        /// Card ID
+        card_id: String,
     },
 }
 
@@ -228,6 +238,10 @@ pub enum BoardCommands {
 
     /// List all accessible boards
     List {
+        /// Include soft-deleted boards
+        #[arg(long)]
+        include_deleted: bool,
+
         /// Output format
         #[arg(long)]
         format: Option<OutputFormat>,
@@ -241,5 +255,11 @@ pub enum BoardCommands {
         /// Board description
         #[arg(long)]
         description: Option<String>,
+    },
+
+    /// Delete a board (soft delete)
+    Delete {
+        /// Board ID
+        board_id: String,
     },
 }
