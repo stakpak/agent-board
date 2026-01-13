@@ -46,11 +46,16 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("Created card: {}", card.id);
                 }
             }
-            CardCommands::Update { card_id, name, description, status, agent_session_id, add_tag, remove_tag } => {
-                let session_id = match &agent_session_id {
-                    Some(s) if s == "null" => Some(None), // explicit unassign
-                    Some(s) => Some(Some(s.clone())),     // explicit assign
-                    None => {
+            CardCommands::Update { card_id, name, description, status, agent_session_id, assign_to_me, add_tag, remove_tag } => {
+                let session_id = match (&agent_session_id, assign_to_me) {
+                    (Some(s), _) if s == "null" => Some(None), // explicit unassign
+                    (Some(s), _) => Some(Some(s.clone())),     // explicit assign
+                    (None, true) => {
+                        // --assign-to-me flag: use current session ID
+                        Some(Some(std::env::var("AGENT_BOARD_SESSION_ID")
+                            .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))?))
+                    }
+                    (None, false) => {
                         // Use env var session ID if status is being changed to in_progress
                         if status == Some(models::Status::InProgress) {
                             Some(Some(std::env::var("AGENT_BOARD_SESSION_ID")

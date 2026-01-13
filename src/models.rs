@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum Status {
     Todo,
     InProgress,
+    PendingReview,
     Done,
 }
 
@@ -14,6 +15,7 @@ impl std::fmt::Display for Status {
         match self {
             Status::Todo => write!(f, "todo"),
             Status::InProgress => write!(f, "in_progress"),
+            Status::PendingReview => write!(f, "pending_review"),
             Status::Done => write!(f, "done"),
         }
     }
@@ -89,6 +91,7 @@ pub struct Comment {
 pub struct BoardSummary {
     pub todo_count: usize,
     pub in_progress_count: usize,
+    pub pending_review_count: usize,
     pub done_count: usize,
     pub total_cards: usize,
 }

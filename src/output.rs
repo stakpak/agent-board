@@ -140,6 +140,7 @@ pub fn print_board(board: &Board, summary: &BoardSummary, format: OutputFormat) 
             println!("\nSummary:");
             println!("  Todo: {}", summary.todo_count);
             println!("  In Progress: {}", summary.in_progress_count);
+            println!("  Pending Review: {}", summary.pending_review_count);
             println!("  Done: {}", summary.done_count);
             println!("  Total: {}", summary.total_cards);
         }

@@ -37,9 +37,10 @@ agent-board board get <board_id>
 
 # Card operations
 agent-board card create <board_id> "Task name" --description "Details" --status todo
-agent-board card list <board_id> [--status todo|in-progress|done]
+agent-board card list <board_id> [--status todo|in-progress|pending-review|done]
 agent-board card get <card_id>
 agent-board card update <card_id> --status in-progress
+agent-board card update <card_id> --status pending-review
 agent-board card update <card_id> --status done --agent-session-id null
 
 # Checklist operations
@@ -52,7 +53,7 @@ agent-board comment add <card_id> "Progress update or notes"
 agent-board comment list <card_id>
 
 # Get my assigned cards
-agent-board mine [--status todo|in-progress|done]
+agent-board mine [--status todo|in-progress|pending-review|done]
 ```
 
 ## Environment Setup
@@ -167,9 +168,10 @@ agent-board card get card_xyz789 --format json | jq '.status'
 |--------|-----------|---------|
 | Todo | `todo` | Not started |
 | In Progress | `in-progress` | Currently being worked on |
-| Done | `done` | Completed |
+| Pending Review | `pending-review` | Work complete, awaiting review |
+| Done | `done` | Completed and reviewed |
 
-**Note:** Use `in-progress` (with hyphen) on the command line, not `in_progress`.
+**Note:** Use hyphens on the command line (e.g., `in-progress`, `pending-review`), not underscores.
 
 ## Card Assignment
 

@@ -144,8 +144,12 @@ pub enum CardCommands {
         status: Option<Status>,
 
         /// Set session ID to assign card (use 'null' to unassign)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "assign_to_me")]
         agent_session_id: Option<String>,
+
+        /// Assign card to current session (uses AGENT_BOARD_SESSION_ID)
+        #[arg(long, conflicts_with = "agent_session_id")]
+        assign_to_me: bool,
 
         /// Add tag (repeatable)
         #[arg(long)]

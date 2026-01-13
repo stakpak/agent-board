@@ -83,6 +83,7 @@ impl Database {
         Ok(BoardSummary {
             todo_count: cards.iter().filter(|c| c.status == Status::Todo).count(),
             in_progress_count: cards.iter().filter(|c| c.status == Status::InProgress).count(),
+            pending_review_count: cards.iter().filter(|c| c.status == Status::PendingReview).count(),
             done_count: cards.iter().filter(|c| c.status == Status::Done).count(),
             total_cards: cards.len(),
         })
