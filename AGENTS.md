@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Rust CLI tool for task management with local JSON storage. Built for AI agents and humans to track work items, checklists, and comments.
+A Rust CLI tool for task management with SQLite storage (via libsql). Built for AI agents and humans to track work items, checklists, and comments.
 
 ## Architecture
 
@@ -11,8 +11,9 @@ src/
 ├── main.rs      # Entry point, command dispatch, error handling
 ├── cli.rs       # Clap-based CLI definitions (Commands, subcommands, args)
 ├── models.rs    # Data structures (Board, Card, Checklist, Comment, Status)
-├── db.rs        # JSON file database operations (CRUD for all entities)
-└── output.rs    # Output formatting (table, json, simple)
+├── db.rs        # SQLite database operations (CRUD for all entities)
+├── output.rs    # Output formatting (table, json, simple)
+└── schema.sql   # SQLite schema definitions
 ```
 
 ## Key Files
@@ -37,11 +38,16 @@ src/
 - `AgentBoardData` holds all entities for JSON serialization
 
 ### db.rs
-- `Database` struct with `data: AgentBoardData` and `path: PathBuf`
-- `load()` reads from `~/.agent-board/data.json` or `AGENT_BOARD_DB_PATH`
-- `save()` writes pretty JSON
-- CRUD methods for boards, cards, checklists, comments
+- `Database` struct with `conn: Connection` (libsql)
+- `load()` opens SQLite at `~/.agent-board/data.db` or `AGENT_BOARD_DB_PATH`
+- Auto-initializes schema from `schema.sql`
+- Async CRUD methods for boards, cards, checklists, comments
 - `generate_id(prefix)` creates IDs like `card_abc123def456`
+
+### schema.sql
+- SQLite schema with tables: `boards`, `cards`, `card_tags`, `checklists`, `checklist_items`, `comments`
+- Foreign keys with `ON DELETE CASCADE`
+- Indexes for common queries (board_id, status, assigned_to)
 
 ### output.rs
 - `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_comments()`
@@ -60,6 +66,8 @@ uuid = { version = "1.6", features = ["v4"] }       # ID generation
 dirs = "5.0"                                        # Home directory
 tabled = "0.15"                                     # Table output
 thiserror = "1.0"                                   # Error handling
+libsql = { version = "0.9", features = ["core"] }  # SQLite database
+tokio = { version = "1.29", features = ["rt", "macros"] }  # Async runtime
 ```
 
 ## Build & Test
@@ -100,10 +108,10 @@ cargo clippy
 
 ## Data Storage
 
-- Default: `~/.agent-board/data.json`
+- Default: `~/.agent-board/data.db` (SQLite)
 - Override: `AGENT_BOARD_DB_PATH` env var
-- Auto-creates parent directories on save
-- Pretty-printed JSON for human readability
+- Auto-creates parent directories and initializes schema on first run
+- Uses libsql for SQLite operations
 
 ## Exit Codes
 
@@ -123,4 +131,3 @@ cargo clippy
 - [ ] Add `board delete` command
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations
-- [ ] Consider SQLite for larger datasets
