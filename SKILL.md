@@ -39,9 +39,9 @@ agent-board board get <board_id>
 agent-board card create <board_id> "Task name" --description "Details" --status todo
 agent-board card list <board_id> [--status todo|in-progress|pending-review|done]
 agent-board card get <card_id>
-agent-board card update <card_id> --status in-progress
+agent-board card update <card_id> --status in-progress --assign-to-me
 agent-board card update <card_id> --status pending-review
-agent-board card update <card_id> --status done --agent-session-id null
+agent-board card update <card_id> --status done
 
 # Checklist operations
 agent-board checklist add <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
@@ -92,8 +92,8 @@ agent-board checklist add card_xyz789 \
   --item "Write integration tests" \
   --item "Update documentation"
 
-# 4. Start working (auto-assigns to your session)
-agent-board card update card_xyz789 --status in-progress
+# 4. Claim the card and start working
+agent-board card update card_xyz789 --status in-progress --assign-to-me
 
 # 5. Document that you're starting
 agent-board comment add card_xyz789 "Beginning OAuth implementation"
@@ -121,8 +121,8 @@ agent-board checklist check item_003
 agent-board checklist check item_004
 agent-board checklist check item_005
 
-# Mark done and unassign
-agent-board card update card_xyz789 --status done --agent-session-id null
+# Mark done (assignment preserved for history)
+agent-board card update card_xyz789 --status done
 
 # Add completion summary
 agent-board comment add card_xyz789 "Implementation complete. All tests passing."
@@ -175,15 +175,20 @@ agent-board card get card_xyz789 --format json | jq '.status'
 
 ## Card Assignment
 
-Cards are automatically assigned when:
-- You update status to `in-progress` (uses `AGENT_BOARD_SESSION_ID`)
+Claim cards with `--assign-to-me`:
+```bash
+# Claim a card when starting work
+agent-board card update card_123 --status in-progress --assign-to-me
+```
+
+Assignment is preserved after completion for history/accountability.
 
 Explicit assignment control:
 ```bash
 # Assign to specific session
 agent-board card update card_123 --agent-session-id session_abc
 
-# Unassign card
+# Unassign card (only if needed)
 agent-board card update card_123 --agent-session-id null
 ```
 
@@ -213,12 +218,13 @@ agent-board card update card_123 --remove-tag urgent
 ## Best Practices for Agents
 
 1. **Always set AGENT_BOARD_SESSION_ID** before starting work
-2. **Think Kanban** - Cards represent discrete, deliverable work items that flow through the board
-3. **Add comments** when starting, making progress, or completing work
-4. **Use descriptive card names** that capture the task intent
-5. **Mark cards done and unassign** when completing work
-6. **Check `agent-board mine`** at session start to see pending work
-7. **Use `--format json`** when you need to parse output programmatically
+2. **Use `--assign-to-me`** when claiming a card to start work
+3. **Think Kanban** - Cards represent discrete, deliverable work items that flow through the board
+4. **Add comments** when starting, making progress, or completing work
+5. **Use descriptive card names** that capture the task intent
+6. **Keep assignment on completion** - Don't unassign when marking done (preserves history)
+7. **Check `agent-board mine`** at session start to see pending work
+8. **Use `--format json`** when you need to parse output programmatically
 
 ### Cards vs Checklists: Kanban Thinking
 
