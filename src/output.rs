@@ -13,6 +13,8 @@ struct CardRow {
     assigned_to: String,
     #[tabled(rename = "Board")]
     board_id: String,
+    #[tabled(rename = "Created")]
+    created_at: String,
 }
 
 #[derive(Tabled)]
@@ -23,6 +25,8 @@ struct BoardRow {
     name: String,
     #[tabled(rename = "Description")]
     description: String,
+    #[tabled(rename = "Created")]
+    created_at: String,
 }
 
 #[derive(Tabled)]
@@ -53,6 +57,7 @@ pub fn print_cards(cards: &[&Card], format: OutputFormat) {
                 status: c.status.to_string(),
                 assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
                 board_id: c.board_id.clone(),
+                created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
             }).collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);
@@ -65,10 +70,14 @@ pub fn print_cards(cards: &[&Card], format: OutputFormat) {
     }
 }
 
-pub fn print_card(card: &Card, format: OutputFormat) {
+pub fn print_card(card: &Card, comments: &[&Comment], format: OutputFormat) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&card).unwrap());
+            let output = serde_json::json!({
+                "card": card,
+                "comments": comments
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         OutputFormat::Table => {
             println!("Card: {}", card.id);
@@ -87,6 +96,17 @@ pub fn print_card(card: &Card, format: OutputFormat) {
                 for item in &checklist.items {
                     let check = if item.checked { "x" } else { " " };
                     println!("  [{}] {} ({})", check, item.text, item.id);
+                }
+            }
+            if !comments.is_empty() {
+                println!("\nComments:");
+                for comment in comments {
+                    let author = comment.author.as_deref().unwrap_or("anonymous");
+                    let time = comment.created_at.format("%Y-%m-%d %H:%M");
+                    println!("  [{}] {} ({})", author, time, comment.id);
+                    for line in comment.text.lines() {
+                        println!("    {}", line);
+                    }
                 }
             }
         }
@@ -110,6 +130,7 @@ pub fn print_boards(boards: &[Board], format: OutputFormat) {
                 id: b.id.clone(),
                 name: b.name.clone(),
                 description: b.description.clone().unwrap_or_else(|| "-".to_string()),
+                created_at: b.created_at.format("%Y-%m-%d %H:%M").to_string(),
             }).collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);

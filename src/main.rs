@@ -34,7 +34,8 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
         Commands::Card { command } => match command {
             CardCommands::Get { card_id, format } => {
                 let card = db.get_card(&card_id)?;
-                output::print_card(card, format.unwrap_or(default_format));
+                let comments = db.list_comments(&card_id)?;
+                output::print_card(card, &comments, format.unwrap_or(default_format));
             }
             CardCommands::List { board_id, status, assigned_to, format } => {
                 let cards = db.list_cards(&board_id, status, assigned_to.as_deref())?;
