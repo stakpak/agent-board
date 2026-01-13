@@ -213,12 +213,44 @@ agent-board card update card_123 --remove-tag urgent
 ## Best Practices for Agents
 
 1. **Always set AGENT_BOARD_SESSION_ID** before starting work
-2. **Create checklists** for multi-step tasks to track progress
+2. **Think Kanban** - Cards represent discrete, deliverable work items that flow through the board
 3. **Add comments** when starting, making progress, or completing work
 4. **Use descriptive card names** that capture the task intent
 5. **Mark cards done and unassign** when completing work
 6. **Check `agent-board mine`** at session start to see pending work
 7. **Use `--format json`** when you need to parse output programmatically
+
+### Cards vs Checklists: Kanban Thinking
+
+**Cards** = Independent work items that can be tracked, assigned, and moved through workflow stages.
+
+**Checklists** = Steps within a single card to track progress on that work item.
+
+| Use Cards When | Use Checklists When |
+|----------------|---------------------|
+| Work can be parallelized across agents/people | Steps are sequential within one deliverable |
+| Items have different dependencies | All steps share the same dependencies |
+| Each item is independently deployable/usable | Steps combine into one deliverable |
+| Work benefits from separate status tracking | Progress is linear through steps |
+| Complex task needs breakdown for clarity | Simple task with known steps |
+
+### Breaking Down Complex Work
+
+For complex tasks, analyze dependencies first:
+
+1. **Identify parallelizable work** → Create separate cards (can be worked simultaneously)
+2. **Identify sequential steps** → Use checklists within a card
+3. **Identify blocking dependencies** → Create cards with clear dependency notes
+
+**Example - Simple task:** "Add Docker support" → One card with checklist (Dockerfile, compose, test, docs)
+
+**Example - Complex task:** "Migrate to microservices" → Multiple cards:
+- Card: "Extract auth service" (can start immediately)
+- Card: "Extract payment service" (can start immediately, parallel)
+- Card: "Update API gateway" (depends on above two)
+- Card: "Migration testing" (depends on all above)
+
+The goal is manageable, trackable work items - not arbitrary granularity.
 
 ## Data Location
 
