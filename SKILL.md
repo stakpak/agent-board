@@ -1,5 +1,5 @@
 ---
-name: taskboard-cli
+name: agent-board-cli
 description: |
   Command-line task management tool for AI coding agents and humans. Provides local JSON-based task boards for tracking work items, checklists, and comments without requiring an external API.
   
@@ -21,38 +21,38 @@ metadata:
   version: "0.1.0"
 ---
 
-# Taskboard CLI for AI Agents
+# Agent-Board CLI for AI Agents
 
 ## Overview
 
-`taskboard` is a command-line task management tool designed for AI coding agents and humans. It provides a local JSON-based task board for tracking work items, checklists, and comments without requiring an external API.
+`agent-board` is a command-line task management tool designed for AI coding agents and humans. It provides a local JSON-based task board for tracking work items, checklists, and comments without requiring an external API.
 
 ## Quick Reference
 
 ```bash
 # Board operations
-taskboard board create "Project Name" --description "Description"
-taskboard board list
-taskboard board get <board_id>
+agent-board board create "Project Name" --description "Description"
+agent-board board list
+agent-board board get <board_id>
 
 # Card operations
-taskboard card create <board_id> "Task name" --description "Details" --status todo
-taskboard card list <board_id> [--status todo|in-progress|done]
-taskboard card get <card_id>
-taskboard card update <card_id> --status in-progress
-taskboard card update <card_id> --status done --agent-session-id null
+agent-board card create <board_id> "Task name" --description "Details" --status todo
+agent-board card list <board_id> [--status todo|in-progress|done]
+agent-board card get <card_id>
+agent-board card update <card_id> --status in-progress
+agent-board card update <card_id> --status done --agent-session-id null
 
 # Checklist operations
-taskboard checklist add <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
-taskboard checklist check <item_id>
-taskboard checklist check <item_id> --uncheck
+agent-board checklist add <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
+agent-board checklist check <item_id>
+agent-board checklist check <item_id> --uncheck
 
 # Comment operations
-taskboard comment add <card_id> "Progress update or notes"
-taskboard comment list <card_id>
+agent-board comment add <card_id> "Progress update or notes"
+agent-board comment list <card_id>
 
 # Get my assigned cards
-taskboard mine [--status todo|in-progress|done]
+agent-board mine [--status todo|in-progress|done]
 ```
 
 ## Environment Setup
@@ -60,13 +60,13 @@ taskboard mine [--status todo|in-progress|done]
 Set your session ID to enable card assignment:
 
 ```bash
-export TASKBOARD_SESSION_ID=agent_session_001
+export AGENT_BOARD_SESSION_ID=agent_session_001
 ```
 
-Data is stored in `~/.taskboard/data.json` by default. Override with:
+Data is stored in `~/.agent-board/data.json` by default. Override with:
 
 ```bash
-export TASKBOARD_DB_PATH=/custom/path/data.json
+export AGENT_BOARD_DB_PATH=/custom/path/data.json
 ```
 
 ## Workflow Patterns
@@ -75,15 +75,15 @@ export TASKBOARD_DB_PATH=/custom/path/data.json
 
 ```bash
 # 1. Find or create a board
-taskboard board list
-taskboard board create "Feature Development" --description "Q1 features"
+agent-board board list
+agent-board board create "Feature Development" --description "Q1 features"
 
 # 2. Create a card for the task
-taskboard card create board_abc123 "Implement user authentication" \
+agent-board card create board_abc123 "Implement user authentication" \
   --description "Add OAuth2 login flow with Google and GitHub providers"
 
 # 3. Break down into subtasks
-taskboard checklist add card_xyz789 \
+agent-board checklist add card_xyz789 \
   --name "Implementation Steps" \
   --item "Set up OAuth client credentials" \
   --item "Create auth endpoints" \
@@ -92,55 +92,55 @@ taskboard checklist add card_xyz789 \
   --item "Update documentation"
 
 # 4. Start working (auto-assigns to your session)
-taskboard card update card_xyz789 --status in-progress
+agent-board card update card_xyz789 --status in-progress
 
 # 5. Document that you're starting
-taskboard comment add card_xyz789 "Beginning OAuth implementation"
+agent-board comment add card_xyz789 "Beginning OAuth implementation"
 ```
 
 ### Tracking Progress
 
 ```bash
 # Check off completed subtasks
-taskboard checklist check item_001
-taskboard checklist check item_002
+agent-board checklist check item_001
+agent-board checklist check item_002
 
 # Add progress notes
-taskboard comment add card_xyz789 "OAuth endpoints complete. Starting session management."
+agent-board comment add card_xyz789 "OAuth endpoints complete. Starting session management."
 
 # View current state
-taskboard card get card_xyz789
+agent-board card get card_xyz789
 ```
 
 ### Completing Work
 
 ```bash
 # Check remaining items
-taskboard checklist check item_003
-taskboard checklist check item_004
-taskboard checklist check item_005
+agent-board checklist check item_003
+agent-board checklist check item_004
+agent-board checklist check item_005
 
 # Mark done and unassign
-taskboard card update card_xyz789 --status done --agent-session-id null
+agent-board card update card_xyz789 --status done --agent-session-id null
 
 # Add completion summary
-taskboard comment add card_xyz789 "Implementation complete. All tests passing."
+agent-board comment add card_xyz789 "Implementation complete. All tests passing."
 ```
 
 ### Reviewing Work
 
 ```bash
 # See all your assigned cards
-taskboard mine
+agent-board mine
 
 # Filter by status
-taskboard mine --status in-progress
+agent-board mine --status in-progress
 
 # Get board overview
-taskboard board get board_abc123
+agent-board board get board_abc123
 
 # List all cards on a board
-taskboard card list board_abc123 --status todo
+agent-board card list board_abc123 --status todo
 ```
 
 ## Output Formats
@@ -155,10 +155,10 @@ Use `--format` to control output:
 
 ```bash
 # Get card ID for scripting
-CARD_ID=$(taskboard card create board_123 "New task" --format simple)
+CARD_ID=$(agent-board card create board_123 "New task" --format simple)
 
 # Get full JSON for parsing
-taskboard card get card_xyz789 --format json | jq '.status'
+agent-board card get card_xyz789 --format json | jq '.status'
 ```
 
 ## Status Values
@@ -174,15 +174,15 @@ taskboard card get card_xyz789 --format json | jq '.status'
 ## Card Assignment
 
 Cards are automatically assigned when:
-- You update status to `in-progress` (uses `TASKBOARD_SESSION_ID`)
+- You update status to `in-progress` (uses `AGENT_BOARD_SESSION_ID`)
 
 Explicit assignment control:
 ```bash
 # Assign to specific session
-taskboard card update card_123 --agent-session-id session_abc
+agent-board card update card_123 --agent-session-id session_abc
 
 # Unassign card
-taskboard card update card_123 --agent-session-id null
+agent-board card update card_123 --agent-session-id null
 ```
 
 ## Tags
@@ -191,10 +191,10 @@ Organize cards with tags:
 
 ```bash
 # Add tags
-taskboard card update card_123 --add-tag urgent --add-tag backend
+agent-board card update card_123 --add-tag urgent --add-tag backend
 
 # Remove tags
-taskboard card update card_123 --remove-tag urgent
+agent-board card update card_123 --remove-tag urgent
 ```
 
 ## Exit Codes
@@ -210,18 +210,18 @@ taskboard card update card_123 --remove-tag urgent
 
 ## Best Practices for Agents
 
-1. **Always set TASKBOARD_SESSION_ID** before starting work
+1. **Always set AGENT_BOARD_SESSION_ID** before starting work
 2. **Create checklists** for multi-step tasks to track progress
 3. **Add comments** when starting, making progress, or completing work
 4. **Use descriptive card names** that capture the task intent
 5. **Mark cards done and unassign** when completing work
-6. **Check `taskboard mine`** at session start to see pending work
+6. **Check `agent-board mine`** at session start to see pending work
 7. **Use `--format json`** when you need to parse output programmatically
 
 ## Data Location
 
 All data persists in a local JSON file:
-- Default: `~/.taskboard/data.json`
-- Override: Set `TASKBOARD_DB_PATH` environment variable
+- Default: `~/.agent-board/data.json`
+- Override: Set `AGENT_BOARD_DB_PATH` environment variable
 
 The database is created automatically on first use.

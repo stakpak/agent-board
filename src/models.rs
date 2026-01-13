@@ -94,7 +94,7 @@ pub struct BoardSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TaskboardData {
+pub struct AgentBoardData {
     pub boards: Vec<Board>,
     pub cards: Vec<Card>,
     pub comments: Vec<Comment>,

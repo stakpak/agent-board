@@ -19,7 +19,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), TaskboardError> {
+fn run(cli: Cli) -> Result<(), AgentBoardError> {
     let mut db = db::Database::load(&cli)?;
     let default_format = cli.format.clone();
     let quiet = cli.quiet;
@@ -53,8 +53,8 @@ fn run(cli: Cli) -> Result<(), TaskboardError> {
                     None => {
                         // Use env var session ID if status is being changed to in_progress
                         if status == Some(models::Status::InProgress) {
-                            Some(Some(std::env::var("TASKBOARD_SESSION_ID")
-                                .map_err(|_| TaskboardError::InvalidArgs("TASKBOARD_SESSION_ID environment variable not set".into()))?))
+                            Some(Some(std::env::var("AGENT_BOARD_SESSION_ID")
+                                .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))?))
                         } else {
                             None // no change to assignment
                         }
@@ -92,11 +92,11 @@ fn run(cli: Cli) -> Result<(), TaskboardError> {
             CommentCommands::Add { card_id, text, file } => {
                 let content = if let Some(path) = file {
                     std::fs::read_to_string(&path)
-                        .map_err(|e| TaskboardError::General(format!("Failed to read file: {}", e)))?
+                        .map_err(|e| AgentBoardError::General(format!("Failed to read file: {}", e)))?
                 } else {
-                    text.ok_or(TaskboardError::InvalidArgs("Either text or --file required".into()))?
+                    text.ok_or(AgentBoardError::InvalidArgs("Either text or --file required".into()))?
                 };
-                let session_id = std::env::var("TASKBOARD_SESSION_ID").ok();
+                let session_id = std::env::var("AGENT_BOARD_SESSION_ID").ok();
                 let comment = db.add_comment(&card_id, content, session_id)?;
                 if !quiet {
                     println!("Added comment: {}", comment.id);
@@ -133,7 +133,7 @@ fn run(cli: Cli) -> Result<(), TaskboardError> {
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum TaskboardError {
+pub enum AgentBoardError {
     #[error("{0}")]
     General(String),
     #[error("Invalid arguments: {0}")]
@@ -150,16 +150,16 @@ pub enum TaskboardError {
     Json(#[from] serde_json::Error),
 }
 
-impl TaskboardError {
+impl AgentBoardError {
     pub fn exit_code(&self) -> ExitCode {
         match self {
-            TaskboardError::General(_) => ExitCode::from(1),
-            TaskboardError::InvalidArgs(_) => ExitCode::from(2),
-            TaskboardError::NotFound(_) => ExitCode::from(4),
-            TaskboardError::PermissionDenied(_) => ExitCode::from(5),
-            TaskboardError::SessionConflict(_) => ExitCode::from(6),
-            TaskboardError::Io(_) => ExitCode::from(1),
-            TaskboardError::Json(_) => ExitCode::from(1),
+            AgentBoardError::General(_) => ExitCode::from(1),
+            AgentBoardError::InvalidArgs(_) => ExitCode::from(2),
+            AgentBoardError::NotFound(_) => ExitCode::from(4),
+            AgentBoardError::PermissionDenied(_) => ExitCode::from(5),
+            AgentBoardError::SessionConflict(_) => ExitCode::from(6),
+            AgentBoardError::Io(_) => ExitCode::from(1),
+            AgentBoardError::Json(_) => ExitCode::from(1),
         }
     }
 }

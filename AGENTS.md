@@ -1,4 +1,4 @@
-# Taskboard Codebase Guide
+# Agent-Board Codebase Guide
 
 ## Project Overview
 
@@ -20,7 +20,7 @@ src/
 ### main.rs
 - Entry point with `main() -> ExitCode`
 - `run(cli: Cli)` dispatches commands to db operations
-- `TaskboardError` enum with exit codes (0-6)
+- `AgentBoardError` enum with exit codes (0-6)
 - Extracts `default_format`, `quiet`, `session_id_result` before match to avoid borrow issues
 
 ### cli.rs
@@ -34,11 +34,11 @@ src/
 - `OutputFormat` enum: `Json`, `Table`, `Simple`
 - `CardUpdate` struct for update operations (avoids too-many-args clippy warning)
 - `Board`, `Card`, `Checklist`, `ChecklistItem`, `Comment` structs
-- `TaskboardData` holds all entities for JSON serialization
+- `AgentBoardData` holds all entities for JSON serialization
 
 ### db.rs
-- `Database` struct with `data: TaskboardData` and `path: PathBuf`
-- `load()` reads from `~/.taskboard/data.json` or `TASKBOARD_DB_PATH`
+- `Database` struct with `data: AgentBoardData` and `path: PathBuf`
+- `load()` reads from `~/.agent-board/data.json` or `AGENT_BOARD_DB_PATH`
 - `save()` writes pretty JSON
 - CRUD methods for boards, cards, checklists, comments
 - `generate_id(prefix)` creates IDs like `card_abc123def456`
@@ -73,9 +73,9 @@ cargo build --release
 cargo clippy
 
 # Test manually
-./target/debug/taskboard board create "Test" --description "Test board"
-./target/debug/taskboard card create board_xxx "Task name"
-./target/debug/taskboard --help
+./target/debug/agent-board board create "Test" --description "Test board"
+./target/debug/agent-board card create board_xxx "Task name"
+./target/debug/agent-board --help
 ```
 
 ## Common Patterns
@@ -100,8 +100,8 @@ cargo clippy
 
 ## Data Storage
 
-- Default: `~/.taskboard/data.json`
-- Override: `TASKBOARD_DB_PATH` env var
+- Default: `~/.agent-board/data.json`
+- Override: `AGENT_BOARD_DB_PATH` env var
 - Auto-creates parent directories on save
 - Pretty-printed JSON for human readability
 

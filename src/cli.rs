@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crate::models::{OutputFormat, Status};
-use crate::TaskboardError;
+use crate::AgentBoardError;
 
 #[derive(Parser, Debug)]
 #[command(name = "taskboard")]
@@ -31,9 +31,9 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn get_session_id(&self) -> Result<String, TaskboardError> {
-        std::env::var("TASKBOARD_SESSION_ID")
-            .map_err(|_| TaskboardError::InvalidArgs("TASKBOARD_SESSION_ID environment variable not set".into()))
+    pub fn get_session_id(&self) -> Result<String, AgentBoardError> {
+        std::env::var("AGENT_BOARD_SESSION_ID")
+            .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))
     }
 }
 

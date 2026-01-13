@@ -1,30 +1,30 @@
 use crate::cli::Cli;
 use crate::models::*;
-use crate::TaskboardError;
+use crate::AgentBoardError;
 use chrono::Utc;
 use std::path::PathBuf;
 use uuid::Uuid;
 
 pub struct Database {
-    data: TaskboardData,
+    data: AgentBoardData,
     path: PathBuf,
 }
 
 impl Database {
-    pub fn load(_cli: &Cli) -> Result<Self, TaskboardError> {
+    pub fn load(_cli: &Cli) -> Result<Self, AgentBoardError> {
         let path = Self::get_db_path()?;
         
         let data = if path.exists() {
             let content = std::fs::read_to_string(&path)?;
             serde_json::from_str(&content)?
         } else {
-            TaskboardData::default()
+            AgentBoardData::default()
         };
 
         Ok(Self { data, path })
     }
 
-    pub fn save(&self) -> Result<(), TaskboardError> {
+    pub fn save(&self) -> Result<(), AgentBoardError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -33,16 +33,16 @@ impl Database {
         Ok(())
     }
 
-    fn get_db_path() -> Result<PathBuf, TaskboardError> {
+    fn get_db_path() -> Result<PathBuf, AgentBoardError> {
         // Check for custom path in env
-        if let Ok(custom_path) = std::env::var("TASKBOARD_DB_PATH") {
+        if let Ok(custom_path) = std::env::var("AGENT_BOARD_DB_PATH") {
             return Ok(PathBuf::from(custom_path));
         }
 
-        // Default to ~/.taskboard/data.json
+        // Default to ~/.agent-board/data.json
         let home = dirs::home_dir()
-            .ok_or_else(|| TaskboardError::General("Could not determine home directory".into()))?;
-        Ok(home.join(".taskboard").join("data.json"))
+            .ok_or_else(|| AgentBoardError::General("Could not determine home directory".into()))?;
+        Ok(home.join(".agent-board").join("data.json"))
     }
 
     fn generate_id(prefix: &str) -> String {
@@ -54,14 +54,14 @@ impl Database {
         &self.data.boards
     }
 
-    pub fn get_board(&self, board_id: &str) -> Result<&Board, TaskboardError> {
+    pub fn get_board(&self, board_id: &str) -> Result<&Board, AgentBoardError> {
         self.data.boards
             .iter()
             .find(|b| b.id == board_id)
-            .ok_or_else(|| TaskboardError::NotFound(format!("Board not found: {}", board_id)))
+            .ok_or_else(|| AgentBoardError::NotFound(format!("Board not found: {}", board_id)))
     }
 
-    pub fn create_board(&mut self, name: String, description: Option<String>) -> Result<&Board, TaskboardError> {
+    pub fn create_board(&mut self, name: String, description: Option<String>) -> Result<&Board, AgentBoardError> {
         let now = Utc::now();
         let board = Board {
             id: Self::generate_id("board"),
@@ -74,7 +74,7 @@ impl Database {
         Ok(self.data.boards.last().unwrap())
     }
 
-    pub fn get_board_summary(&self, board_id: &str) -> Result<BoardSummary, TaskboardError> {
+    pub fn get_board_summary(&self, board_id: &str) -> Result<BoardSummary, AgentBoardError> {
         // Verify board exists
         self.get_board(board_id)?;
 
@@ -89,14 +89,14 @@ impl Database {
     }
 
     // Card operations
-    pub fn get_card(&self, card_id: &str) -> Result<&Card, TaskboardError> {
+    pub fn get_card(&self, card_id: &str) -> Result<&Card, AgentBoardError> {
         self.data.cards
             .iter()
             .find(|c| c.id == card_id)
-            .ok_or_else(|| TaskboardError::NotFound(format!("Card not found: {}", card_id)))
+            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))
     }
 
-    pub fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>) -> Result<Vec<&Card>, TaskboardError> {
+    pub fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>) -> Result<Vec<&Card>, AgentBoardError> {
         // Verify board exists
         self.get_board(board_id)?;
 
@@ -108,7 +108,7 @@ impl Database {
             .collect())
     }
 
-    pub fn get_cards_by_assignee(&self, session_id: &str, board_id: Option<&str>, status: Option<Status>) -> Result<Vec<&Card>, TaskboardError> {
+    pub fn get_cards_by_assignee(&self, session_id: &str, board_id: Option<&str>, status: Option<Status>) -> Result<Vec<&Card>, AgentBoardError> {
         Ok(self.data.cards
             .iter()
             .filter(|c| c.assigned_to.as_deref() == Some(session_id))
@@ -117,7 +117,7 @@ impl Database {
             .collect())
     }
 
-    pub fn create_card(&mut self, board_id: &str, name: String, description: Option<String>, status: Status) -> Result<&Card, TaskboardError> {
+    pub fn create_card(&mut self, board_id: &str, name: String, description: Option<String>, status: Status) -> Result<&Card, AgentBoardError> {
         // Verify board exists
         self.get_board(board_id)?;
 
@@ -142,11 +142,11 @@ impl Database {
         &mut self,
         card_id: &str,
         update: crate::models::CardUpdate,
-    ) -> Result<(), TaskboardError> {
+    ) -> Result<(), AgentBoardError> {
         let card = self.data.cards
             .iter_mut()
             .find(|c| c.id == card_id)
-            .ok_or_else(|| TaskboardError::NotFound(format!("Card not found: {}", card_id)))?;
+            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
 
         if let Some(n) = update.name {
             card.name = n;
@@ -174,11 +174,11 @@ impl Database {
     }
 
     // Checklist operations
-    pub fn add_checklist(&mut self, card_id: &str, name: String, items: Vec<String>) -> Result<&Checklist, TaskboardError> {
+    pub fn add_checklist(&mut self, card_id: &str, name: String, items: Vec<String>) -> Result<&Checklist, AgentBoardError> {
         let card = self.data.cards
             .iter_mut()
             .find(|c| c.id == card_id)
-            .ok_or_else(|| TaskboardError::NotFound(format!("Card not found: {}", card_id)))?;
+            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
 
         let checklist = Checklist {
             id: Self::generate_id("checklist"),
@@ -195,7 +195,7 @@ impl Database {
         Ok(card.checklists.last().unwrap())
     }
 
-    pub fn check_item(&mut self, item_id: &str, checked: bool) -> Result<(), TaskboardError> {
+    pub fn check_item(&mut self, item_id: &str, checked: bool) -> Result<(), AgentBoardError> {
         for card in &mut self.data.cards {
             for checklist in &mut card.checklists {
                 if let Some(item) = checklist.items.iter_mut().find(|i| i.id == item_id) {
@@ -205,11 +205,11 @@ impl Database {
                 }
             }
         }
-        Err(TaskboardError::NotFound(format!("Checklist item not found: {}", item_id)))
+        Err(AgentBoardError::NotFound(format!("Checklist item not found: {}", item_id)))
     }
 
     // Comment operations
-    pub fn add_comment(&mut self, card_id: &str, text: String, author: Option<String>) -> Result<&Comment, TaskboardError> {
+    pub fn add_comment(&mut self, card_id: &str, text: String, author: Option<String>) -> Result<&Comment, AgentBoardError> {
         // Verify card exists
         self.get_card(card_id)?;
 
@@ -224,7 +224,7 @@ impl Database {
         Ok(self.data.comments.last().unwrap())
     }
 
-    pub fn list_comments(&self, card_id: &str) -> Result<Vec<&Comment>, TaskboardError> {
+    pub fn list_comments(&self, card_id: &str) -> Result<Vec<&Comment>, AgentBoardError> {
         // Verify card exists
         self.get_card(card_id)?;
 

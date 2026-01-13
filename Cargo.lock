@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "agent-board"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tabled",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -511,20 +525,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "taskboard"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "dirs",
- "serde",
- "serde_json",
- "tabled",
- "thiserror",
- "uuid",
 ]
 
 [[package]]
