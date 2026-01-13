@@ -1,35 +1,44 @@
 use crate::cli::Cli;
 use crate::models::*;
 use crate::AgentBoardError;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use libsql::{Builder, Connection};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+const SCHEMA: &str = include_str!("schema.sql");
+
 pub struct Database {
-    data: AgentBoardData,
-    path: PathBuf,
+    conn: Connection,
 }
 
 impl Database {
-    pub fn load(_cli: &Cli) -> Result<Self, AgentBoardError> {
+    pub async fn load(_cli: &Cli) -> Result<Self, AgentBoardError> {
         let path = Self::get_db_path()?;
         
-        let data = if path.exists() {
-            let content = std::fs::read_to_string(&path)?;
-            serde_json::from_str(&content)?
-        } else {
-            AgentBoardData::default()
-        };
-
-        Ok(Self { data, path })
-    }
-
-    pub fn save(&self) -> Result<(), AgentBoardError> {
-        if let Some(parent) = self.path.parent() {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(&self.data)?;
-        std::fs::write(&self.path, content)?;
+
+        let db = Builder::new_local(&path)
+            .build()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Failed to open database: {}", e)))?;
+        
+        let conn = db.connect()
+            .map_err(|e| AgentBoardError::General(format!("Failed to connect: {}", e)))?;
+
+        // Initialize schema
+        conn.execute_batch(SCHEMA)
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Failed to initialize schema: {}", e)))?;
+
+        Ok(Self { conn })
+    }
+
+    pub async fn save(&self) -> Result<(), AgentBoardError> {
+        // SQLite auto-commits, nothing to do here
         Ok(())
     }
 
@@ -39,199 +48,481 @@ impl Database {
             return Ok(PathBuf::from(custom_path));
         }
 
-        // Default to ~/.agent-board/data.json
+        // Default to ~/.agent-board/data.db
         let home = dirs::home_dir()
             .ok_or_else(|| AgentBoardError::General("Could not determine home directory".into()))?;
-        Ok(home.join(".agent-board").join("data.json"))
+        Ok(home.join(".agent-board").join("data.db"))
     }
 
     fn generate_id(prefix: &str) -> String {
         format!("{}_{}", prefix, &Uuid::new_v4().to_string().replace("-", "")[..12])
     }
 
+    fn parse_datetime(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now())
+    }
+
+    fn status_from_str(s: &str) -> Status {
+        match s {
+            "in_progress" => Status::InProgress,
+            "pending_review" => Status::PendingReview,
+            "done" => Status::Done,
+            _ => Status::Todo,
+        }
+    }
+
     // Board operations
-    pub fn list_boards(&self) -> &[Board] {
-        &self.data.boards
+    pub async fn list_boards(&self) -> Result<Vec<Board>, AgentBoardError> {
+        let mut rows = self.conn
+            .query("SELECT id, name, description, created_at, updated_at FROM boards ORDER BY created_at DESC", ())
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut boards = Vec::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            boards.push(Board {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                description: row.get::<Option<String>>(2).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
+            });
+        }
+        Ok(boards)
     }
 
-    pub fn get_board(&self, board_id: &str) -> Result<&Board, AgentBoardError> {
-        self.data.boards
-            .iter()
-            .find(|b| b.id == board_id)
-            .ok_or_else(|| AgentBoardError::NotFound(format!("Board not found: {}", board_id)))
+    pub async fn get_board(&self, board_id: &str) -> Result<Board, AgentBoardError> {
+        let mut rows = self.conn
+            .query("SELECT id, name, description, created_at, updated_at FROM boards WHERE id = ?1", [board_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        if let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            Ok(Board {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                description: row.get::<Option<String>>(2).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
+            })
+        } else {
+            Err(AgentBoardError::NotFound(format!("Board not found: {}", board_id)))
+        }
     }
 
-    pub fn create_board(&mut self, name: String, description: Option<String>) -> Result<&Board, AgentBoardError> {
-        let now = Utc::now();
-        let board = Board {
-            id: Self::generate_id("board"),
-            name,
-            description,
-            created_at: now,
-            updated_at: now,
-        };
-        self.data.boards.push(board);
-        Ok(self.data.boards.last().unwrap())
+    pub async fn create_board(&self, name: String, description: Option<String>) -> Result<Board, AgentBoardError> {
+        let id = Self::generate_id("board");
+        let now = Utc::now().to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT INTO boards (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![id.as_str(), name.as_str(), description.clone().unwrap_or_default().as_str(), now.as_str(), now.as_str()],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Insert failed: {}", e)))?;
+
+        self.get_board(&id).await
     }
 
-    pub fn get_board_summary(&self, board_id: &str) -> Result<BoardSummary, AgentBoardError> {
+    pub async fn get_board_summary(&self, board_id: &str) -> Result<BoardSummary, AgentBoardError> {
         // Verify board exists
-        self.get_board(board_id)?;
+        self.get_board(board_id).await?;
 
-        let cards: Vec<_> = self.data.cards.iter().filter(|c| c.board_id == board_id).collect();
-        
-        Ok(BoardSummary {
-            todo_count: cards.iter().filter(|c| c.status == Status::Todo).count(),
-            in_progress_count: cards.iter().filter(|c| c.status == Status::InProgress).count(),
-            pending_review_count: cards.iter().filter(|c| c.status == Status::PendingReview).count(),
-            done_count: cards.iter().filter(|c| c.status == Status::Done).count(),
-            total_cards: cards.len(),
-        })
+        let mut rows = self.conn
+            .query(
+                "SELECT status, COUNT(*) as cnt FROM cards WHERE board_id = ?1 GROUP BY status",
+                [board_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut summary = BoardSummary::default();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            let status: String = row.get(0).unwrap_or_default();
+            let count: i64 = row.get(1).unwrap_or(0);
+            match status.as_str() {
+                "todo" => summary.todo_count = count as usize,
+                "in_progress" => summary.in_progress_count = count as usize,
+                "pending_review" => summary.pending_review_count = count as usize,
+                "done" => summary.done_count = count as usize,
+                _ => {}
+            }
+        }
+        summary.total_cards = summary.todo_count + summary.in_progress_count + summary.pending_review_count + summary.done_count;
+        Ok(summary)
     }
 
-    // Card operations
-    pub fn get_card(&self, card_id: &str) -> Result<&Card, AgentBoardError> {
-        self.data.cards
-            .iter()
-            .find(|c| c.id == card_id)
-            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))
-    }
+    // Card operations - helper to load full card with tags and checklists
+    async fn load_card_full(&self, card_id: &str) -> Result<Card, AgentBoardError> {
+        let mut rows = self.conn
+            .query(
+                "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at FROM cards WHERE id = ?1",
+                [card_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
-    pub fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>) -> Result<Vec<&Card>, AgentBoardError> {
-        // Verify board exists
-        self.get_board(board_id)?;
+        let row = rows.next().await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
 
-        Ok(self.data.cards
-            .iter()
-            .filter(|c| c.board_id == board_id)
-            .filter(|c| status.as_ref().is_none_or(|s| &c.status == s))
-            .filter(|c| assigned_to.is_none_or(|a| c.assigned_to.as_deref() == Some(a)))
-            .collect())
-    }
+        let id: String = row.get(0).unwrap_or_default();
+        let board_id: String = row.get(1).unwrap_or_default();
+        let name: String = row.get(2).unwrap_or_default();
+        let description: Option<String> = row.get::<Option<String>>(3).ok().flatten();
+        let status = Self::status_from_str(&row.get::<String>(4).unwrap_or_default());
+        let assigned_to: Option<String> = row.get::<Option<String>>(5).ok().flatten();
+        let created_at = Self::parse_datetime(&row.get::<String>(6).unwrap_or_default());
+        let updated_at = Self::parse_datetime(&row.get::<String>(7).unwrap_or_default());
 
-    pub fn get_cards_by_assignee(&self, session_id: &str, board_id: Option<&str>, status: Option<Status>) -> Result<Vec<&Card>, AgentBoardError> {
-        Ok(self.data.cards
-            .iter()
-            .filter(|c| c.assigned_to.as_deref() == Some(session_id))
-            .filter(|c| board_id.is_none_or(|b| c.board_id == b))
-            .filter(|c| status.as_ref().is_none_or(|s| &c.status == s))
-            .collect())
-    }
+        // Load tags
+        let mut tag_rows = self.conn
+            .query("SELECT tag FROM card_tags WHERE card_id = ?1", [id.as_str()])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+        let mut tags = Vec::new();
+        while let Some(tag_row) = tag_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            tags.push(tag_row.get::<String>(0).unwrap_or_default());
+        }
 
-    pub fn create_card(&mut self, board_id: &str, name: String, description: Option<String>, status: Status) -> Result<&Card, AgentBoardError> {
-        // Verify board exists
-        self.get_board(board_id)?;
+        // Load checklists
+        let checklists = self.load_checklists_for_card(&id).await?;
 
-        let now = Utc::now();
-        let card = Card {
-            id: Self::generate_id("card"),
-            board_id: board_id.to_string(),
+        Ok(Card {
+            id,
+            board_id,
             name,
             description,
             status,
-            assigned_to: None,
-            tags: Vec::new(),
-            checklists: Vec::new(),
-            created_at: now,
-            updated_at: now,
-        };
-        self.data.cards.push(card);
-        Ok(self.data.cards.last().unwrap())
+            assigned_to,
+            tags,
+            checklists,
+            created_at,
+            updated_at,
+        })
     }
 
-    pub fn update_card(
-        &mut self,
+    async fn load_checklists_for_card(&self, card_id: &str) -> Result<Vec<Checklist>, AgentBoardError> {
+        let mut checklist_rows = self.conn
+            .query("SELECT id, name FROM checklists WHERE card_id = ?1", [card_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut checklists = Vec::new();
+        while let Some(cl_row) = checklist_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            let cl_id: String = cl_row.get(0).unwrap_or_default();
+            let cl_name: String = cl_row.get(1).unwrap_or_default();
+
+            // Load items for this checklist
+            let mut item_rows = self.conn
+                .query("SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1", [cl_id.as_str()])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+            let mut items = Vec::new();
+            while let Some(item_row) = item_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+                items.push(ChecklistItem {
+                    id: item_row.get::<String>(0).unwrap_or_default(),
+                    text: item_row.get::<String>(1).unwrap_or_default(),
+                    checked: item_row.get::<i64>(2).unwrap_or(0) != 0,
+                });
+            }
+
+            checklists.push(Checklist {
+                id: cl_id,
+                name: cl_name,
+                items,
+            });
+        }
+        Ok(checklists)
+    }
+
+    pub async fn get_card(&self, card_id: &str) -> Result<Card, AgentBoardError> {
+        self.load_card_full(card_id).await
+    }
+
+    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>) -> Result<Vec<Card>, AgentBoardError> {
+        // Verify board exists
+        self.get_board(board_id).await?;
+
+        let query = match (&status, &assigned_to) {
+            (Some(s), Some(a)) => {
+                format!(
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}' AND assigned_to = '{}'",
+                    board_id, s, a
+                )
+            }
+            (Some(s), None) => {
+                format!(
+                    "SELECT id FROM cards WHERE board_id = '{}' AND status = '{}'",
+                    board_id, s
+                )
+            }
+            (None, Some(a)) => {
+                format!(
+                    "SELECT id FROM cards WHERE board_id = '{}' AND assigned_to = '{}'",
+                    board_id, a
+                )
+            }
+            (None, None) => {
+                format!("SELECT id FROM cards WHERE board_id = '{}'", board_id)
+            }
+        };
+
+        let mut rows = self.conn
+            .query(&query, ())
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut cards = Vec::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            let card_id: String = row.get(0).unwrap_or_default();
+            cards.push(self.load_card_full(&card_id).await?);
+        }
+        Ok(cards)
+    }
+
+    pub async fn get_cards_by_assignee(&self, session_id: &str, board_id: Option<&str>, status: Option<Status>) -> Result<Vec<Card>, AgentBoardError> {
+        let query = match (&board_id, &status) {
+            (Some(b), Some(s)) => {
+                format!(
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}' AND status = '{}'",
+                    session_id, b, s
+                )
+            }
+            (Some(b), None) => {
+                format!(
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND board_id = '{}'",
+                    session_id, b
+                )
+            }
+            (None, Some(s)) => {
+                format!(
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND status = '{}'",
+                    session_id, s
+                )
+            }
+            (None, None) => {
+                format!("SELECT id FROM cards WHERE assigned_to = '{}'", session_id)
+            }
+        };
+
+        let mut rows = self.conn
+            .query(&query, ())
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut cards = Vec::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            let card_id: String = row.get(0).unwrap_or_default();
+            cards.push(self.load_card_full(&card_id).await?);
+        }
+        Ok(cards)
+    }
+
+    pub async fn create_card(&self, board_id: &str, name: String, description: Option<String>, status: Status) -> Result<Card, AgentBoardError> {
+        // Verify board exists
+        self.get_board(board_id).await?;
+
+        let id = Self::generate_id("card");
+        let now = Utc::now().to_rfc3339();
+        let status_str = status.to_string();
+
+        self.conn
+            .execute(
+                "INSERT INTO cards (id, board_id, name, description, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                [&id, board_id, &name, &description.clone().unwrap_or_default(), &status_str, &now, &now],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Insert failed: {}", e)))?;
+
+        self.get_card(&id).await
+    }
+
+    pub async fn update_card(
+        &self,
         card_id: &str,
         update: crate::models::CardUpdate,
     ) -> Result<(), AgentBoardError> {
-        let card = self.data.cards
-            .iter_mut()
-            .find(|c| c.id == card_id)
-            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
+        // Verify card exists
+        self.get_card(card_id).await?;
+
+        let now = Utc::now().to_rfc3339();
 
         if let Some(n) = update.name {
-            card.name = n;
+            self.conn
+                .execute("UPDATE cards SET name = ?1, updated_at = ?2 WHERE id = ?3", [&n, &now, card_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
         if let Some(d) = update.description {
-            card.description = Some(d);
+            self.conn
+                .execute("UPDATE cards SET description = ?1, updated_at = ?2 WHERE id = ?3", [&d, &now, card_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
         if let Some(s) = update.status {
-            card.status = s;
+            self.conn
+                .execute("UPDATE cards SET status = ?1, updated_at = ?2 WHERE id = ?3", [&s.to_string(), &now, card_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
         if let Some(sid) = update.session_id {
-            card.assigned_to = sid;
-        }
-        for tag in update.add_tags {
-            if !card.tags.contains(&tag) {
-                card.tags.push(tag);
+            match sid {
+                Some(s) => {
+                    self.conn
+                        .execute("UPDATE cards SET assigned_to = ?1, updated_at = ?2 WHERE id = ?3", [&s, &now, card_id])
+                        .await
+                        .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+                }
+                None => {
+                    self.conn
+                        .execute("UPDATE cards SET assigned_to = NULL, updated_at = ?1 WHERE id = ?2", [&now, card_id])
+                        .await
+                        .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+                }
             }
         }
-        for tag in update.remove_tags {
-            card.tags.retain(|t| t != &tag);
+        for tag in update.add_tags {
+            self.conn
+                .execute("INSERT OR IGNORE INTO card_tags (card_id, tag) VALUES (?1, ?2)", [card_id, &tag])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Insert tag failed: {}", e)))?;
         }
-        card.updated_at = Utc::now();
+        for tag in update.remove_tags {
+            self.conn
+                .execute("DELETE FROM card_tags WHERE card_id = ?1 AND tag = ?2", [card_id, &tag])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Delete tag failed: {}", e)))?;
+        }
 
         Ok(())
     }
 
     // Checklist operations
-    pub fn add_checklist(&mut self, card_id: &str, name: String, items: Vec<String>) -> Result<&Checklist, AgentBoardError> {
-        let card = self.data.cards
-            .iter_mut()
-            .find(|c| c.id == card_id)
-            .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
+    pub async fn add_checklist(&self, card_id: &str, name: String, items: Vec<String>) -> Result<Checklist, AgentBoardError> {
+        // Verify card exists
+        self.get_card(card_id).await?;
 
-        let checklist = Checklist {
-            id: Self::generate_id("checklist"),
-            name,
-            items: items.into_iter().map(|text| ChecklistItem {
-                id: Self::generate_id("item"),
-                text,
+        let checklist_id = Self::generate_id("checklist");
+        
+        self.conn
+            .execute(
+                "INSERT INTO checklists (id, card_id, name) VALUES (?1, ?2, ?3)",
+                [&checklist_id, card_id, &name],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Insert checklist failed: {}", e)))?;
+
+        let mut checklist_items = Vec::new();
+        for item_text in items {
+            let item_id = Self::generate_id("item");
+            self.conn
+                .execute(
+                    "INSERT INTO checklist_items (id, checklist_id, text, checked) VALUES (?1, ?2, ?3, 0)",
+                    libsql::params![item_id.as_str(), checklist_id.as_str(), item_text.as_str()],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Insert item failed: {}", e)))?;
+            checklist_items.push(ChecklistItem {
+                id: item_id,
+                text: item_text,
                 checked: false,
-            }).collect(),
-        };
-        card.checklists.push(checklist);
-        card.updated_at = Utc::now();
+            });
+        }
 
-        Ok(card.checklists.last().unwrap())
+        // Update card's updated_at
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute("UPDATE cards SET updated_at = ?1 WHERE id = ?2", [&now, card_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+
+        Ok(Checklist {
+            id: checklist_id,
+            name,
+            items: checklist_items,
+        })
     }
 
-    pub fn check_item(&mut self, item_id: &str, checked: bool) -> Result<(), AgentBoardError> {
-        for card in &mut self.data.cards {
-            for checklist in &mut card.checklists {
-                if let Some(item) = checklist.items.iter_mut().find(|i| i.id == item_id) {
-                    item.checked = checked;
-                    card.updated_at = Utc::now();
-                    return Ok(());
-                }
-            }
+    pub async fn check_item(&self, item_id: &str, checked: bool) -> Result<(), AgentBoardError> {
+        let checked_val = if checked { 1 } else { 0 };
+        
+        let result = self.conn
+            .execute(
+                "UPDATE checklist_items SET checked = ?1 WHERE id = ?2",
+                libsql::params![checked_val, item_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+
+        if result == 0 {
+            return Err(AgentBoardError::NotFound(format!("Checklist item not found: {}", item_id)));
         }
-        Err(AgentBoardError::NotFound(format!("Checklist item not found: {}", item_id)))
+
+        // Update the card's updated_at via the checklist
+        self.conn
+            .execute(
+                "UPDATE cards SET updated_at = ?1 WHERE id = (SELECT card_id FROM checklists WHERE id = (SELECT checklist_id FROM checklist_items WHERE id = ?2))",
+                [&Utc::now().to_rfc3339(), item_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Update card timestamp failed: {}", e)))?;
+
+        Ok(())
     }
 
     // Comment operations
-    pub fn add_comment(&mut self, card_id: &str, text: String, author: Option<String>) -> Result<&Comment, AgentBoardError> {
+    pub async fn add_comment(&self, card_id: &str, text: String, author: Option<String>) -> Result<Comment, AgentBoardError> {
         // Verify card exists
-        self.get_card(card_id)?;
+        self.get_card(card_id).await?;
 
-        let comment = Comment {
-            id: Self::generate_id("comment"),
+        let id = Self::generate_id("comment");
+        let now = Utc::now();
+        let now_str = now.to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT INTO comments (id, card_id, author, text, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                [&id, card_id, &author.clone().unwrap_or_default(), &text, &now_str],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Insert comment failed: {}", e)))?;
+
+        Ok(Comment {
+            id,
             card_id: card_id.to_string(),
             author,
             text,
-            created_at: Utc::now(),
-        };
-        self.data.comments.push(comment);
-        Ok(self.data.comments.last().unwrap())
+            created_at: now,
+        })
     }
 
-    pub fn list_comments(&self, card_id: &str) -> Result<Vec<&Comment>, AgentBoardError> {
+    pub async fn list_comments(&self, card_id: &str) -> Result<Vec<Comment>, AgentBoardError> {
         // Verify card exists
-        self.get_card(card_id)?;
+        self.get_card(card_id).await?;
 
-        Ok(self.data.comments
-            .iter()
-            .filter(|c| c.card_id == card_id)
-            .collect())
+        let mut rows = self.conn
+            .query(
+                "SELECT id, card_id, author, text, created_at FROM comments WHERE card_id = ?1 ORDER BY created_at ASC",
+                [card_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut comments = Vec::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            comments.push(Comment {
+                id: row.get::<String>(0).unwrap_or_default(),
+                card_id: row.get::<String>(1).unwrap_or_default(),
+                author: row.get::<Option<String>>(2).ok().flatten(),
+                text: row.get::<String>(3).unwrap_or_default(),
+                created_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
+            });
+        }
+        Ok(comments)
     }
 }

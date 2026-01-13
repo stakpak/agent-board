@@ -12,3 +12,5 @@ uuid = { version = "1.6", features = ["v4"] }
 dirs = "5.0"
 tabled = "0.15"
 thiserror = "1.0"
+libsql = { version = "0.9", default-features = false, features = ["core"] }
+tokio = { version = "1.29", features = ["rt", "macros"] }

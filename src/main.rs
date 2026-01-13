@@ -10,7 +10,12 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let cli = Cli::parse();
     
-    match run(cli) {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+    
+    match rt.block_on(run(cli)) {
         Ok(()) => ExitCode::from(0),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -19,8 +24,8 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), AgentBoardError> {
-    let mut db = db::Database::load(&cli)?;
+async fn run(cli: Cli) -> Result<(), AgentBoardError> {
+    let db = db::Database::load(&cli).await?;
     let default_format = cli.format.clone();
     let quiet = cli.quiet;
     let session_id_result = cli.get_session_id();
@@ -28,21 +33,21 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
     match cli.command {
         Commands::Mine { board, status, format } => {
             let session_id = session_id_result?;
-            let cards = db.get_cards_by_assignee(&session_id, board.as_deref(), status)?;
+            let cards = db.get_cards_by_assignee(&session_id, board.as_deref(), status).await?;
             output::print_cards(&cards, format.unwrap_or(default_format));
         }
         Commands::Card { command } => match command {
             CardCommands::Get { card_id, format } => {
-                let card = db.get_card(&card_id)?;
-                let comments = db.list_comments(&card_id)?;
-                output::print_card(card, &comments, format.unwrap_or(default_format));
+                let card = db.get_card(&card_id).await?;
+                let comments = db.list_comments(&card_id).await?;
+                output::print_card(&card, &comments, format.unwrap_or(default_format));
             }
             CardCommands::List { board_id, status, assigned_to, format } => {
-                let cards = db.list_cards(&board_id, status, assigned_to.as_deref())?;
+                let cards = db.list_cards(&board_id, status, assigned_to.as_deref()).await?;
                 output::print_cards(&cards, format.unwrap_or(default_format));
             }
             CardCommands::Create { board_id, name, description, status } => {
-                let card = db.create_card(&board_id, name, description, status)?;
+                let card = db.create_card(&board_id, name, description, status).await?;
                 if !quiet {
                     println!("Created card: {}", card.id);
                 }
@@ -74,7 +79,7 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     add_tags: add_tag,
                     remove_tags: remove_tag,
                 };
-                db.update_card(&card_id, update)?;
+                db.update_card(&card_id, update).await?;
                 if !quiet {
                     println!("Updated card: {}", card_id);
                 }
@@ -82,13 +87,13 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
         },
         Commands::Checklist { command } => match command {
             ChecklistCommands::Add { card_id, name, item } => {
-                let checklist = db.add_checklist(&card_id, name, item)?;
+                let checklist = db.add_checklist(&card_id, name, item).await?;
                 if !quiet {
                     println!("Added checklist: {}", checklist.id);
                 }
             }
             ChecklistCommands::Check { item_id, uncheck } => {
-                db.check_item(&item_id, !uncheck)?;
+                db.check_item(&item_id, !uncheck).await?;
                 if !quiet {
                     println!("{} item: {}", if uncheck { "Unchecked" } else { "Checked" }, item_id);
                 }
@@ -103,28 +108,28 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     text.ok_or(AgentBoardError::InvalidArgs("Either text or --file required".into()))?
                 };
                 let session_id = std::env::var("AGENT_BOARD_SESSION_ID").ok();
-                let comment = db.add_comment(&card_id, content, session_id)?;
+                let comment = db.add_comment(&card_id, content, session_id).await?;
                 if !quiet {
                     println!("Added comment: {}", comment.id);
                 }
             }
             CommentCommands::List { card_id, format } => {
-                let comments = db.list_comments(&card_id)?;
+                let comments = db.list_comments(&card_id).await?;
                 output::print_comments(&comments, format.unwrap_or(default_format));
             }
         },
         Commands::Board { command } => match command {
             BoardCommands::Get { board_id, format } => {
-                let board = db.get_board(&board_id)?;
-                let summary = db.get_board_summary(&board_id)?;
-                output::print_board(board, &summary, format.unwrap_or(default_format));
+                let board = db.get_board(&board_id).await?;
+                let summary = db.get_board_summary(&board_id).await?;
+                output::print_board(&board, &summary, format.unwrap_or(default_format));
             }
             BoardCommands::List { format } => {
-                let boards = db.list_boards();
-                output::print_boards(boards, format.unwrap_or(default_format));
+                let boards = db.list_boards().await?;
+                output::print_boards(&boards, format.unwrap_or(default_format));
             }
             BoardCommands::Create { name, description } => {
-                let board = db.create_board(name, description)?;
+                let board = db.create_board(name, description).await?;
                 if !quiet {
                     println!("Created board: {}", board.id);
                 }
@@ -132,7 +137,7 @@ fn run(cli: Cli) -> Result<(), AgentBoardError> {
         },
     }
     
-    db.save()?;
+    db.save().await?;
     Ok(())
 }
 

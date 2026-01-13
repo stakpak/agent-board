@@ -41,7 +41,7 @@ struct CommentRow {
     created_at: String,
 }
 
-pub fn print_cards(cards: &[&Card], format: OutputFormat) {
+pub fn print_cards(cards: &[Card], format: OutputFormat) {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&cards).unwrap());
@@ -70,7 +70,7 @@ pub fn print_cards(cards: &[&Card], format: OutputFormat) {
     }
 }
 
-pub fn print_card(card: &Card, comments: &[&Comment], format: OutputFormat) {
+pub fn print_card(card: &Card, comments: &[Comment], format: OutputFormat) {
     match format {
         OutputFormat::Json => {
             let output = serde_json::json!({
@@ -171,7 +171,7 @@ pub fn print_board(board: &Board, summary: &BoardSummary, format: OutputFormat) 
     }
 }
 
-pub fn print_comments(comments: &[&Comment], format: OutputFormat) {
+pub fn print_comments(comments: &[Comment], format: OutputFormat) {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&comments).unwrap());
