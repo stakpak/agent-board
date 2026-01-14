@@ -1,6 +1,20 @@
 # Agent-Board
 
+[![Paks](https://img.shields.io/badge/paks-stakpak%2Fagent--board--cli-blue)](https://paks.stakpak.dev/stakpak/agent-board-cli)
+
 A simple CLI task manager built in Rust. Works for humans and AI agents alike.
+
+## Agent Skill (Pak)
+
+This tool is available as a [Stakpak Pak](https://paks.stakpak.dev/stakpak/agent-board-cli) for AI coding agents. The pak provides detailed usage instructions, workflow patterns, and best practices for agents to effectively use agent-board for task management.
+
+```bash
+# Search for the pak
+paks search agent-board-cli
+
+# View pak details
+paks info stakpak/agent-board-cli
+```
 
 ## What It Does
 
