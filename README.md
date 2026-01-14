@@ -21,6 +21,39 @@ agent-board mine
 
 ## Install
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew tap stakpak/stakpak
+brew install agent-board
+```
+
+### Direct Download
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/stakpak/agent-board/releases):
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-darwin-aarch64.tar.gz | tar xz
+sudo mv agent-board /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-darwin-x86_64.tar.gz | tar xz
+sudo mv agent-board /usr/local/bin/
+
+# Linux (x86_64)
+curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-linux-x86_64.tar.gz | tar xz
+sudo mv agent-board /usr/local/bin/
+
+# Linux (ARM64)
+curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-linux-aarch64.tar.gz | tar xz
+sudo mv agent-board /usr/local/bin/
+```
+
+For Windows, download `agent-board-windows-x86_64.zip` from the releases page and add to your PATH.
+
+### Build from Source
+
 ```bash
 cargo build --release
 # Binary at ./target/release/agent-board
