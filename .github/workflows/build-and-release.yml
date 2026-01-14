@@ -122,3 +122,73 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  homebrew:
+    needs: [setup, release]
+    if: startsWith(github.ref, 'refs/tags/') && needs.setup.outputs.is_beta == 'false'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: stakpak/homebrew-stakpak
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          VERSION_NUM=${VERSION#v}
+          
+          curl -L "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-darwin-x86_64.tar.gz" -o agent-board-darwin-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-darwin-aarch64.tar.gz" -o agent-board-darwin-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-linux-x86_64.tar.gz" -o agent-board-linux-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-linux-aarch64.tar.gz" -o agent-board-linux-aarch64.tar.gz
+
+          SHA256_DARWIN_X64=$(sha256sum agent-board-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_DARWIN_ARM=$(sha256sum agent-board-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_X64=$(sha256sum agent-board-linux-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_ARM=$(sha256sum agent-board-linux-aarch64.tar.gz | cut -d ' ' -f 1)
+
+          cat > agent-board.rb << EOF
+          class AgentBoard < Formula
+            desc "Task management CLI for AI agents and humans"
+            homepage "https://github.com/stakpak/agent-board"
+            version "${VERSION_NUM}"
+            license "MIT"
+            
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-darwin-aarch64.tar.gz"
+                sha256 "${SHA256_DARWIN_ARM}"
+              else
+                url "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-darwin-x86_64.tar.gz"
+                sha256 "${SHA256_DARWIN_X64}"
+              end
+            end
+            
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-linux-aarch64.tar.gz"
+                sha256 "${SHA256_LINUX_ARM}"
+              else
+                url "https://github.com/stakpak/agent-board/releases/download/${VERSION}/agent-board-linux-x86_64.tar.gz"
+                sha256 "${SHA256_LINUX_X64}"
+              end
+            end
+            
+            def install
+              bin.install "agent-board"
+            end
+            
+            test do
+              system "#{bin}/agent-board", "--help"
+            end
+          end
+          EOF
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add agent-board.rb
+          git commit -m "Update agent-board to ${VERSION}"
+          git push
