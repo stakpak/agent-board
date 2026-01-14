@@ -1,6 +1,7 @@
 # Stakpak session files
-.stakpak
+.stakpak/session*
 
 
 # Added by cargo
 /target
+.github_token
