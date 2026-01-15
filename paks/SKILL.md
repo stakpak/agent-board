@@ -51,7 +51,6 @@ agent-board checklist check <item_id> --uncheck
 
 # Comment operations
 agent-board comment add <card_id> "Progress update or notes"
-agent-board comment list <card_id>
 
 # Get my assigned cards
 agent-board mine [--status todo|in-progress|pending-review|done]

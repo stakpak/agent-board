@@ -119,10 +119,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("Added comment: {}", comment.id);
                 }
             }
-            CommentCommands::List { card_id, format } => {
-                let comments = db.list_comments(&card_id).await?;
-                output::print_comments(&comments, format.unwrap_or(default_format));
-            }
         },
         Commands::Board { command } => match command {
             BoardCommands::Get { board_id, format } => {

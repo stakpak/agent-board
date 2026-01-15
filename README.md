@@ -116,7 +116,6 @@ agent-board checklist check <item_id> --uncheck  # Mark item as not done
 
 # Comment commands
 agent-board comment add <card_id> "text"  # Add a comment to a card
-agent-board comment list <card_id>        # List all comments on a card
 ```
 
 ## Human Review Workflow

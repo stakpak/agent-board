@@ -29,18 +29,6 @@ struct BoardRow {
     created_at: String,
 }
 
-#[derive(Tabled)]
-struct CommentRow {
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Author")]
-    author: String,
-    #[tabled(rename = "Text")]
-    text: String,
-    #[tabled(rename = "Created")]
-    created_at: String,
-}
-
 pub fn print_cards(cards: &[Card], format: OutputFormat) {
     match format {
         OutputFormat::Json => {
@@ -173,33 +161,6 @@ pub fn print_board(board: &Board, summary: &BoardSummary, format: OutputFormat) 
         }
         OutputFormat::Simple => {
             println!("{}", board.id);
-        }
-    }
-}
-
-pub fn print_comments(comments: &[Comment], format: OutputFormat) {
-    match format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&comments).unwrap());
-        }
-        OutputFormat::Table => {
-            if comments.is_empty() {
-                println!("No comments found.");
-                return;
-            }
-            let rows: Vec<CommentRow> = comments.iter().map(|c| CommentRow {
-                id: c.id.clone(),
-                author: c.author.clone().unwrap_or_else(|| "-".to_string()),
-                text: truncate(&c.text, 50),
-                created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
-            }).collect();
-            let table = Table::new(rows).with(Style::rounded()).to_string();
-            println!("{}", table);
-        }
-        OutputFormat::Simple => {
-            for comment in comments {
-                println!("{}", comment.id);
-            }
         }
     }
 }

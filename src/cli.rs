@@ -216,16 +216,6 @@ pub enum CommentCommands {
         #[arg(long)]
         file: Option<String>,
     },
-
-    /// List all comments on a card
-    List {
-        /// Card ID
-        card_id: String,
-
-        /// Output format
-        #[arg(long)]
-        format: Option<OutputFormat>,
-    },
 }
 
 #[derive(Subcommand, Debug)]
