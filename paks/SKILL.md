@@ -1,7 +1,7 @@
 ---
 name: agent-board-cli
 description: |
-  Command-line task management tool for AI coding agents and humans. Provides local JSON-based task boards for tracking work items, checklists, and comments without requiring an external API.
+  Command-line task management tool for AI coding agents and humans. Provides local SQLite-based task boards for tracking work items, checklists, and comments without requiring an external API.
   
   Use this skill when:
   - Managing multi-step coding tasks
@@ -25,24 +25,26 @@ metadata:
 
 ## Overview
 
-`agent-board` is a command-line task management tool designed for AI coding agents and humans. It provides a local JSON-based task board for tracking work items, checklists, and comments without requiring an external API.
+`agent-board` is a command-line task management tool designed for AI coding agents and humans. It provides a local SQLite-based task board for tracking work items, checklists, and comments without requiring an external API.
 
 ## Quick Reference
 
 ```bash
 # Board operations
 agent-board board create "Project Name" --description "Description"
-agent-board board list
+agent-board board list [--include-deleted]
 agent-board board get <board_id>
+agent-board board delete <board_id>
 
 # Card operations
 agent-board card create <board_id> "Task name" --description "Details" --status todo
-agent-board card list <board_id> [--status todo|in-progress|pending-review|done]
+agent-board card list <board_id> [--status todo|in-progress|pending-review|done] [--include-deleted]
 agent-board card list <board_id> --tag blocked --tag needs-human  # Filter by tags (AND logic)
 agent-board card get <card_id>
 agent-board card update <card_id> --status in-progress --assign-to-me
 agent-board card update <card_id> --status pending-review
 agent-board card update <card_id> --status done
+agent-board card delete <card_id>
 
 # Checklist operations
 agent-board checklist add <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
@@ -104,10 +106,10 @@ Set your session ID to enable card assignment:
 export AGENT_BOARD_SESSION_ID=agent_session_001
 ```
 
-Data is stored in `~/.agent-board/data.json` by default. Override with:
+Data is stored in `~/.agent-board/data.db` (SQLite) by default. Override with:
 
 ```bash
-export AGENT_BOARD_DB_PATH=/custom/path/data.json
+export AGENT_BOARD_DB_PATH=/custom/path/data.db
 ```
 
 ## Workflow Patterns
@@ -357,8 +359,8 @@ The goal is manageable, trackable work items - not arbitrary granularity.
 
 ## Data Location
 
-All data persists in a local JSON file:
-- Default: `~/.agent-board/data.json`
+All data persists in a local SQLite database:
+- Default: `~/.agent-board/data.db`
 - Override: Set `AGENT_BOARD_DB_PATH` environment variable
 
 The database is created automatically on first use.
