@@ -68,19 +68,34 @@ sudo mv agent-board /usr/local/bin/
 cargo build --release  # Binary at ./target/release/agent-board
 ```
 
-## Environment Setup
+## Agent Identity
 
-Set your session ID to enable card assignment:
-
-```bash
-export AGENT_BOARD_SESSION_ID=agent_session_001
-```
-
-Data is stored in `~/.agent-board/data.db` (SQLite) by default. Override with:
+Register your identity before working:
 
 ```bash
-export AGENT_BOARD_DB_PATH=/custom/path/data.db
+# Register (auto-generates name like "swift-falcon")
+agent-board agent register --command stakpak
+# Created agent: agent_abc123 (Name: swift-falcon)
+# To use this agent, run:
+#   export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# Or with explicit name
+agent-board agent register --command claude --name code-reviewer
+
+# Set identity for session
+export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# Verify identity (warns if wrong directory)
+agent-board agent whoami
+
+# Other agent commands
+agent-board agent list
+agent-board agent get <agent_id>
+agent-board agent update <agent_id> --workdir .
+agent-board agent unregister <agent_id>
 ```
+
+Data stored in `~/.agent-board/data.db`. Override: `export AGENT_BOARD_DB_PATH=/path/data.db`
 
 ## Workflow Patterns
 
@@ -197,11 +212,11 @@ Assignment is preserved after completion for history/accountability.
 
 Explicit assignment control:
 ```bash
-# Assign to specific session
-agent-board card update card_123 --agent-session-id session_abc
+# Assign to specific agent
+agent-board card update card_123 --assign agent_abc123
 
 # Unassign card (only if needed)
-agent-board card update card_123 --agent-session-id null
+agent-board card update card_123 --assign null
 ```
 
 ## Tags
@@ -250,8 +265,9 @@ agent-board comment add card_123 "Ready for review: verify terraform plan"
 
 ## Best Practices for Agents
 
-1. **Always set AGENT_BOARD_SESSION_ID** before starting work
-2. **Use `--assign-to-me`** when claiming a card to start work
+1. **Register identity first** with `agent-board agent register --command <your-cli>`
+2. **Set `AGENT_BOARD_AGENT_ID`** before starting work
+3. **Use `--assign-to-me`** when claiming a card to start work
 3. **Think Kanban** - Cards represent discrete, deliverable work items that flow through the board
 4. **Add comments** when starting, making progress, or completing work
 5. **Use descriptive card names** that capture the task intent

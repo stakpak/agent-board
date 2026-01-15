@@ -1,6 +1,6 @@
+use crate::AgentBoardError;
 use crate::cli::Cli;
 use crate::models::*;
-use crate::AgentBoardError;
 use chrono::{DateTime, Utc};
 use libsql::{Builder, Connection};
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ pub struct Database {
 impl Database {
     pub async fn load(_cli: &Cli) -> Result<Self, AgentBoardError> {
         let path = Self::get_db_path()?;
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -25,8 +25,9 @@ impl Database {
             .build()
             .await
             .map_err(|e| AgentBoardError::General(format!("Failed to open database: {}", e)))?;
-        
-        let conn = db.connect()
+
+        let conn = db
+            .connect()
             .map_err(|e| AgentBoardError::General(format!("Failed to connect: {}", e)))?;
 
         // Initialize schema
@@ -55,7 +56,11 @@ impl Database {
     }
 
     fn generate_id(prefix: &str) -> String {
-        format!("{}_{}", prefix, &Uuid::new_v4().to_string().replace("-", "")[..12])
+        format!(
+            "{}_{}",
+            prefix,
+            &Uuid::new_v4().to_string().replace("-", "")[..12]
+        )
     }
 
     fn parse_datetime(s: &str) -> DateTime<Utc> {
@@ -73,6 +78,185 @@ impl Database {
         }
     }
 
+    fn generate_agent_name() -> String {
+        let mut generator = names::Generator::default();
+        generator
+            .next()
+            .unwrap_or_else(|| "unnamed-agent".to_string())
+    }
+
+    // Agent operations
+    pub async fn register_agent(
+        &self,
+        name: Option<String>,
+        command: String,
+        working_directory: String,
+        description: Option<String>,
+    ) -> Result<Agent, AgentBoardError> {
+        let agent_name = name.unwrap_or_else(Self::generate_agent_name);
+        let id = Self::generate_id("agent");
+        let now = Utc::now().to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT INTO agents (id, name, command, working_directory, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                libsql::params![id.as_str(), agent_name.as_str(), command.as_str(), working_directory.as_str(), description.clone().unwrap_or_default().as_str(), now.as_str(), now.as_str()],
+            )
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("UNIQUE constraint failed") {
+                    AgentBoardError::InvalidArgs(format!("Agent name '{}' already exists", agent_name))
+                } else {
+                    AgentBoardError::General(format!("Insert failed: {}", e))
+                }
+            })?;
+
+        self.get_agent(&id).await
+    }
+
+    pub async fn get_agent(&self, agent_id: &str) -> Result<Agent, AgentBoardError> {
+        let mut rows = self.conn
+            .query(
+                "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents WHERE id = ?1 AND deactivated_at IS NULL",
+                [agent_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        if let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
+            Ok(Agent {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                command: row.get::<String>(2).unwrap_or_default(),
+                working_directory: row.get::<String>(3).unwrap_or_default(),
+                description: row.get::<Option<String>>(4).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(5).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(6).unwrap_or_default()),
+                deactivated_at: row
+                    .get::<Option<String>>(7)
+                    .ok()
+                    .flatten()
+                    .map(|s| Self::parse_datetime(&s)),
+            })
+        } else {
+            Err(AgentBoardError::NotFound(format!(
+                "Agent not found: {}",
+                agent_id
+            )))
+        }
+    }
+
+    pub async fn list_agents(&self, include_inactive: bool) -> Result<Vec<Agent>, AgentBoardError> {
+        let query = if include_inactive {
+            "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents ORDER BY created_at DESC"
+        } else {
+            "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents WHERE deactivated_at IS NULL ORDER BY created_at DESC"
+        };
+        let mut rows = self
+            .conn
+            .query(query, ())
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut agents = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
+            agents.push(Agent {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                command: row.get::<String>(2).unwrap_or_default(),
+                working_directory: row.get::<String>(3).unwrap_or_default(),
+                description: row.get::<Option<String>>(4).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(5).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(6).unwrap_or_default()),
+                deactivated_at: row
+                    .get::<Option<String>>(7)
+                    .ok()
+                    .flatten()
+                    .map(|s| Self::parse_datetime(&s)),
+            });
+        }
+        Ok(agents)
+    }
+
+    pub async fn update_agent(
+        &self,
+        agent_id: &str,
+        update: AgentUpdate,
+    ) -> Result<(), AgentBoardError> {
+        // Verify agent exists
+        self.get_agent(agent_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+
+        if let Some(n) = update.name {
+            self.conn
+                .execute(
+                    "UPDATE agents SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&n, &now, agent_id],
+                )
+                .await
+                .map_err(|e| {
+                    if e.to_string().contains("UNIQUE constraint failed") {
+                        AgentBoardError::InvalidArgs(format!("Agent name '{}' already exists", n))
+                    } else {
+                        AgentBoardError::General(format!("Update failed: {}", e))
+                    }
+                })?;
+        }
+        if let Some(c) = update.command {
+            self.conn
+                .execute(
+                    "UPDATE agents SET command = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&c, &now, agent_id],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        if let Some(d) = update.description {
+            self.conn
+                .execute(
+                    "UPDATE agents SET description = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&d, &now, agent_id],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        if let Some(w) = update.working_directory {
+            self.conn
+                .execute(
+                    "UPDATE agents SET working_directory = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&w, &now, agent_id],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    pub async fn unregister_agent(&self, agent_id: &str) -> Result<(), AgentBoardError> {
+        // Verify agent exists
+        self.get_agent(agent_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE agents SET deactivated_at = ?1, updated_at = ?1 WHERE id = ?2",
+                [&now, agent_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Unregister failed: {}", e)))?;
+
+        Ok(())
+    }
+
     // Board operations
     pub async fn list_boards(&self, include_deleted: bool) -> Result<Vec<Board>, AgentBoardError> {
         let query = if include_deleted {
@@ -80,20 +264,29 @@ impl Database {
         } else {
             "SELECT id, name, description, created_at, updated_at, deleted_at FROM boards WHERE deleted_at IS NULL ORDER BY created_at DESC"
         };
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(query, ())
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut boards = Vec::new();
-        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             boards.push(Board {
                 id: row.get::<String>(0).unwrap_or_default(),
                 name: row.get::<String>(1).unwrap_or_default(),
                 description: row.get::<Option<String>>(2).ok().flatten(),
                 created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
                 updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
-                deleted_at: row.get::<Option<String>>(5).ok().flatten().map(|s| Self::parse_datetime(&s)),
+                deleted_at: row
+                    .get::<Option<String>>(5)
+                    .ok()
+                    .flatten()
+                    .map(|s| Self::parse_datetime(&s)),
             });
         }
         Ok(boards)
@@ -105,17 +298,28 @@ impl Database {
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
-        if let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        if let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             Ok(Board {
                 id: row.get::<String>(0).unwrap_or_default(),
                 name: row.get::<String>(1).unwrap_or_default(),
                 description: row.get::<Option<String>>(2).ok().flatten(),
                 created_at: Self::parse_datetime(&row.get::<String>(3).unwrap_or_default()),
                 updated_at: Self::parse_datetime(&row.get::<String>(4).unwrap_or_default()),
-                deleted_at: row.get::<Option<String>>(5).ok().flatten().map(|s| Self::parse_datetime(&s)),
+                deleted_at: row
+                    .get::<Option<String>>(5)
+                    .ok()
+                    .flatten()
+                    .map(|s| Self::parse_datetime(&s)),
             })
         } else {
-            Err(AgentBoardError::NotFound(format!("Board not found: {}", board_id)))
+            Err(AgentBoardError::NotFound(format!(
+                "Board not found: {}",
+                board_id
+            )))
         }
     }
 
@@ -144,7 +348,11 @@ impl Database {
         Ok(())
     }
 
-    pub async fn create_board(&self, name: String, description: Option<String>) -> Result<Board, AgentBoardError> {
+    pub async fn create_board(
+        &self,
+        name: String,
+        description: Option<String>,
+    ) -> Result<Board, AgentBoardError> {
         let id = Self::generate_id("board");
         let now = Utc::now().to_rfc3339();
 
@@ -172,7 +380,11 @@ impl Database {
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut summary = BoardSummary::default();
-        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             let status: String = row.get(0).unwrap_or_default();
             let count: i64 = row.get(1).unwrap_or(0);
             match status.as_str() {
@@ -183,7 +395,10 @@ impl Database {
                 _ => {}
             }
         }
-        summary.total_cards = summary.todo_count + summary.in_progress_count + summary.pending_review_count + summary.done_count;
+        summary.total_cards = summary.todo_count
+            + summary.in_progress_count
+            + summary.pending_review_count
+            + summary.done_count;
         Ok(summary)
     }
 
@@ -192,18 +407,25 @@ impl Database {
         self.load_card_full_with_deleted(card_id, false).await
     }
 
-    async fn load_card_full_with_deleted(&self, card_id: &str, include_deleted: bool) -> Result<Card, AgentBoardError> {
+    async fn load_card_full_with_deleted(
+        &self,
+        card_id: &str,
+        include_deleted: bool,
+    ) -> Result<Card, AgentBoardError> {
         let query = if include_deleted {
             "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at, deleted_at FROM cards WHERE id = ?1"
         } else {
             "SELECT id, board_id, name, description, status, assigned_to, created_at, updated_at, deleted_at FROM cards WHERE id = ?1 AND deleted_at IS NULL"
         };
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(query, [card_id])
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
-        let row = rows.next().await
+        let row = rows
+            .next()
+            .await
             .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
             .ok_or_else(|| AgentBoardError::NotFound(format!("Card not found: {}", card_id)))?;
 
@@ -215,15 +437,27 @@ impl Database {
         let assigned_to: Option<String> = row.get::<Option<String>>(5).ok().flatten();
         let created_at = Self::parse_datetime(&row.get::<String>(6).unwrap_or_default());
         let updated_at = Self::parse_datetime(&row.get::<String>(7).unwrap_or_default());
-        let deleted_at: Option<DateTime<Utc>> = row.get::<Option<String>>(8).ok().flatten().map(|s| Self::parse_datetime(&s));
+        let deleted_at: Option<DateTime<Utc>> = row
+            .get::<Option<String>>(8)
+            .ok()
+            .flatten()
+            .map(|s| Self::parse_datetime(&s));
 
         // Load tags
-        let mut tag_rows = self.conn
-            .query("SELECT tag FROM card_tags WHERE card_id = ?1", [id.as_str()])
+        let mut tag_rows = self
+            .conn
+            .query(
+                "SELECT tag FROM card_tags WHERE card_id = ?1",
+                [id.as_str()],
+            )
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
         let mut tags = Vec::new();
-        while let Some(tag_row) = tag_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(tag_row) = tag_rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             tags.push(tag_row.get::<String>(0).unwrap_or_default());
         }
 
@@ -245,25 +479,44 @@ impl Database {
         })
     }
 
-    async fn load_checklists_for_card(&self, card_id: &str) -> Result<Vec<Checklist>, AgentBoardError> {
-        let mut checklist_rows = self.conn
-            .query("SELECT id, name FROM checklists WHERE card_id = ?1", [card_id])
+    async fn load_checklists_for_card(
+        &self,
+        card_id: &str,
+    ) -> Result<Vec<Checklist>, AgentBoardError> {
+        let mut checklist_rows = self
+            .conn
+            .query(
+                "SELECT id, name FROM checklists WHERE card_id = ?1",
+                [card_id],
+            )
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut checklists = Vec::new();
-        while let Some(cl_row) = checklist_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(cl_row) = checklist_rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             let cl_id: String = cl_row.get(0).unwrap_or_default();
             let cl_name: String = cl_row.get(1).unwrap_or_default();
 
             // Load items for this checklist
-            let mut item_rows = self.conn
-                .query("SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1", [cl_id.as_str()])
+            let mut item_rows = self
+                .conn
+                .query(
+                    "SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1",
+                    [cl_id.as_str()],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
             let mut items = Vec::new();
-            while let Some(item_row) = item_rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            while let Some(item_row) = item_rows
+                .next()
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+            {
                 items.push(ChecklistItem {
                     id: item_row.get::<String>(0).unwrap_or_default(),
                     text: item_row.get::<String>(1).unwrap_or_default(),
@@ -284,33 +537,59 @@ impl Database {
         self.load_card_full(card_id).await
     }
 
-    pub async fn list_cards(&self, board_id: &str, status: Option<Status>, assigned_to: Option<&str>, tags: &[String], include_deleted: bool) -> Result<Vec<Card>, AgentBoardError> {
+    pub async fn list_cards(
+        &self,
+        board_id: &str,
+        status: Option<Status>,
+        assigned_to: Option<&str>,
+        tags: &[String],
+        include_deleted: bool,
+    ) -> Result<Vec<Card>, AgentBoardError> {
         // Verify board exists (allow deleted boards when include_deleted is true)
         if include_deleted {
             // Check if board exists at all (including deleted)
-            let mut rows = self.conn
+            let mut rows = self
+                .conn
                 .query("SELECT id FROM boards WHERE id = ?1", [board_id])
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
-            if rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?.is_none() {
-                return Err(AgentBoardError::NotFound(format!("Board not found: {}", board_id)));
+            if rows
+                .next()
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+                .is_none()
+            {
+                return Err(AgentBoardError::NotFound(format!(
+                    "Board not found: {}",
+                    board_id
+                )));
             }
         } else {
             self.get_board(board_id).await?;
         }
 
-        let deleted_filter = if include_deleted { "" } else { " AND deleted_at IS NULL" };
-        
+        let deleted_filter = if include_deleted {
+            ""
+        } else {
+            " AND deleted_at IS NULL"
+        };
+
         // Build tag filter using subquery for AND logic (card must have ALL specified tags)
         let tag_filter = if tags.is_empty() {
             String::new()
         } else {
-            let tag_conditions: Vec<String> = tags.iter()
-                .map(|t| format!("EXISTS (SELECT 1 FROM card_tags WHERE card_id = cards.id AND tag = '{}')", t))
+            let tag_conditions: Vec<String> = tags
+                .iter()
+                .map(|t| {
+                    format!(
+                        "EXISTS (SELECT 1 FROM card_tags WHERE card_id = cards.id AND tag = '{}')",
+                        t
+                    )
+                })
                 .collect();
             format!(" AND {}", tag_conditions.join(" AND "))
         };
-        
+
         let query = match (&status, &assigned_to) {
             (Some(s), Some(a)) => {
                 format!(
@@ -331,24 +610,40 @@ impl Database {
                 )
             }
             (None, None) => {
-                format!("SELECT id FROM cards WHERE board_id = '{}'{}{}",  board_id, deleted_filter, tag_filter)
+                format!(
+                    "SELECT id FROM cards WHERE board_id = '{}'{}{}",
+                    board_id, deleted_filter, tag_filter
+                )
             }
         };
 
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(&query, ())
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut cards = Vec::new();
-        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             let card_id: String = row.get(0).unwrap_or_default();
-            cards.push(self.load_card_full_with_deleted(&card_id, include_deleted).await?);
+            cards.push(
+                self.load_card_full_with_deleted(&card_id, include_deleted)
+                    .await?,
+            );
         }
         Ok(cards)
     }
 
-    pub async fn get_cards_by_assignee(&self, session_id: &str, board_id: Option<&str>, status: Option<Status>) -> Result<Vec<Card>, AgentBoardError> {
+    pub async fn get_cards_by_assignee(
+        &self,
+        session_id: &str,
+        board_id: Option<&str>,
+        status: Option<Status>,
+    ) -> Result<Vec<Card>, AgentBoardError> {
         let query = match (&board_id, &status) {
             (Some(b), Some(s)) => {
                 format!(
@@ -369,24 +664,38 @@ impl Database {
                 )
             }
             (None, None) => {
-                format!("SELECT id FROM cards WHERE assigned_to = '{}' AND deleted_at IS NULL", session_id)
+                format!(
+                    "SELECT id FROM cards WHERE assigned_to = '{}' AND deleted_at IS NULL",
+                    session_id
+                )
             }
         };
 
-        let mut rows = self.conn
+        let mut rows = self
+            .conn
             .query(&query, ())
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut cards = Vec::new();
-        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             let card_id: String = row.get(0).unwrap_or_default();
             cards.push(self.load_card_full(&card_id).await?);
         }
         Ok(cards)
     }
 
-    pub async fn create_card(&self, board_id: &str, name: String, description: Option<String>, status: Status) -> Result<Card, AgentBoardError> {
+    pub async fn create_card(
+        &self,
+        board_id: &str,
+        name: String,
+        description: Option<String>,
+        status: Status,
+    ) -> Result<Card, AgentBoardError> {
         // Verify board exists
         self.get_board(board_id).await?;
 
@@ -417,19 +726,28 @@ impl Database {
 
         if let Some(n) = update.name {
             self.conn
-                .execute("UPDATE cards SET name = ?1, updated_at = ?2 WHERE id = ?3", [&n, &now, card_id])
+                .execute(
+                    "UPDATE cards SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&n, &now, card_id],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
         if let Some(d) = update.description {
             self.conn
-                .execute("UPDATE cards SET description = ?1, updated_at = ?2 WHERE id = ?3", [&d, &now, card_id])
+                .execute(
+                    "UPDATE cards SET description = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&d, &now, card_id],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
         if let Some(s) = update.status {
             self.conn
-                .execute("UPDATE cards SET status = ?1, updated_at = ?2 WHERE id = ?3", [&s.to_string(), &now, card_id])
+                .execute(
+                    "UPDATE cards SET status = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&s.to_string(), &now, card_id],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
         }
@@ -437,13 +755,19 @@ impl Database {
             match sid {
                 Some(s) => {
                     self.conn
-                        .execute("UPDATE cards SET assigned_to = ?1, updated_at = ?2 WHERE id = ?3", [&s, &now, card_id])
+                        .execute(
+                            "UPDATE cards SET assigned_to = ?1, updated_at = ?2 WHERE id = ?3",
+                            [&s, &now, card_id],
+                        )
                         .await
                         .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
                 }
                 None => {
                     self.conn
-                        .execute("UPDATE cards SET assigned_to = NULL, updated_at = ?1 WHERE id = ?2", [&now, card_id])
+                        .execute(
+                            "UPDATE cards SET assigned_to = NULL, updated_at = ?1 WHERE id = ?2",
+                            [&now, card_id],
+                        )
                         .await
                         .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
                 }
@@ -451,13 +775,19 @@ impl Database {
         }
         for tag in update.add_tags {
             self.conn
-                .execute("INSERT OR IGNORE INTO card_tags (card_id, tag) VALUES (?1, ?2)", [card_id, &tag])
+                .execute(
+                    "INSERT OR IGNORE INTO card_tags (card_id, tag) VALUES (?1, ?2)",
+                    [card_id, &tag],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Insert tag failed: {}", e)))?;
         }
         for tag in update.remove_tags {
             self.conn
-                .execute("DELETE FROM card_tags WHERE card_id = ?1 AND tag = ?2", [card_id, &tag])
+                .execute(
+                    "DELETE FROM card_tags WHERE card_id = ?1 AND tag = ?2",
+                    [card_id, &tag],
+                )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Delete tag failed: {}", e)))?;
         }
@@ -482,12 +812,17 @@ impl Database {
     }
 
     // Checklist operations
-    pub async fn add_checklist(&self, card_id: &str, name: String, items: Vec<String>) -> Result<Checklist, AgentBoardError> {
+    pub async fn add_checklist(
+        &self,
+        card_id: &str,
+        name: String,
+        items: Vec<String>,
+    ) -> Result<Checklist, AgentBoardError> {
         // Verify card exists
         self.get_card(card_id).await?;
 
         let checklist_id = Self::generate_id("checklist");
-        
+
         self.conn
             .execute(
                 "INSERT INTO checklists (id, card_id, name) VALUES (?1, ?2, ?3)",
@@ -516,7 +851,10 @@ impl Database {
         // Update card's updated_at
         let now = Utc::now().to_rfc3339();
         self.conn
-            .execute("UPDATE cards SET updated_at = ?1 WHERE id = ?2", [&now, card_id])
+            .execute(
+                "UPDATE cards SET updated_at = ?1 WHERE id = ?2",
+                [&now, card_id],
+            )
             .await
             .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
 
@@ -529,8 +867,9 @@ impl Database {
 
     pub async fn check_item(&self, item_id: &str, checked: bool) -> Result<(), AgentBoardError> {
         let checked_val = if checked { 1 } else { 0 };
-        
-        let result = self.conn
+
+        let result = self
+            .conn
             .execute(
                 "UPDATE checklist_items SET checked = ?1 WHERE id = ?2",
                 libsql::params![checked_val, item_id],
@@ -539,7 +878,10 @@ impl Database {
             .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
 
         if result == 0 {
-            return Err(AgentBoardError::NotFound(format!("Checklist item not found: {}", item_id)));
+            return Err(AgentBoardError::NotFound(format!(
+                "Checklist item not found: {}",
+                item_id
+            )));
         }
 
         // Update the card's updated_at via the checklist
@@ -555,7 +897,12 @@ impl Database {
     }
 
     // Comment operations
-    pub async fn add_comment(&self, card_id: &str, text: String, author: Option<String>) -> Result<Comment, AgentBoardError> {
+    pub async fn add_comment(
+        &self,
+        card_id: &str,
+        text: String,
+        author: Option<String>,
+    ) -> Result<Comment, AgentBoardError> {
         // Verify card exists
         self.get_card(card_id).await?;
 
@@ -593,7 +940,11 @@ impl Database {
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
         let mut comments = Vec::new();
-        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
             comments.push(Comment {
                 id: row.get::<String>(0).unwrap_or_default(),
                 card_id: row.get::<String>(1).unwrap_or_default(),

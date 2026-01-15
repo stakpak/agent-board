@@ -10,7 +10,7 @@ A Rust CLI tool for task management with SQLite storage (via libsql). Built for 
 src/
 ├── main.rs      # Entry point, command dispatch, error handling
 ├── cli.rs       # Clap-based CLI definitions (Commands, subcommands, args)
-├── models.rs    # Data structures (Board, Card, Checklist, Comment, Status)
+├── models.rs    # Data structures (Agent, Board, Card, Checklist, Comment, Status)
 ├── db.rs        # SQLite database operations (CRUD for all entities)
 ├── output.rs    # Output formatting (table, json, simple)
 └── schema.sql   # SQLite schema definitions
@@ -22,15 +22,17 @@ src/
 - Entry point with `main() -> ExitCode`
 - `run(cli: Cli)` dispatches commands to db operations
 - `AgentBoardError` enum with exit codes (0-6)
-- Extracts `default_format`, `quiet`, `session_id_result` before match to avoid borrow issues
+- Extracts `default_format`, `quiet`, `agent_id_result` before match to avoid borrow issues
 
 ### cli.rs
 - `Cli` struct with global options (`--format`, `--quiet`, `--verbose`)
-- `Commands` enum: `Mine`, `Card`, `Checklist`, `Comment`, `Board`
-- Subcommand enums: `CardCommands`, `ChecklistCommands`, `CommentCommands`, `BoardCommands`
+- `Commands` enum: `Mine`, `Agent`, `Card`, `Checklist`, `Comment`, `Board`
+- Subcommand enums: `AgentCommands`, `CardCommands`, `ChecklistCommands`, `CommentCommands`, `BoardCommands`
 - Uses clap derive macros
 
 ### models.rs
+- `Agent` struct: id, name, command, working_directory, description, timestamps, deactivated_at
+- `AgentUpdate` struct for agent update operations
 - `Status` enum: `Todo`, `InProgress`, `PendingReview`, `Done` (serde snake_case)
 - `OutputFormat` enum: `Json`, `Table`, `Simple`, `Pretty`
 - `CardUpdate` struct for update operations (avoids too-many-args clippy warning)
@@ -42,22 +44,25 @@ src/
 - `Database` struct with `conn: Connection` (libsql)
 - `load()` opens SQLite at `~/.agent-board/data.db` or `AGENT_BOARD_DB_PATH`
 - Auto-initializes schema from `schema.sql`
-- Async CRUD methods for boards, cards, checklists, comments
-- `generate_id(prefix)` creates IDs like `card_abc123def456`
+- Async CRUD methods for agents, boards, cards, checklists, comments
+- `generate_id(prefix)` creates IDs like `agent_abc123def456`, `card_abc123def456`
+- `generate_agent_name()` uses `names` crate for random adjective-noun names
 
 ### schema.sql
-- SQLite schema with tables: `boards`, `cards`, `card_tags`, `checklists`, `checklist_items`, `comments`
+- SQLite schema with tables: `agents`, `boards`, `cards`, `card_tags`, `checklists`, `checklist_items`, `comments`
+- `agents` table: id, name (unique), command, working_directory, description, timestamps, deactivated_at
 - `boards` and `cards` tables have `deleted_at TEXT` column for soft delete
 - Foreign keys with `ON DELETE CASCADE`
 - Indexes for common queries (board_id, status, assigned_to)
 
 ### output.rs
-- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`
+- `print_agents()`, `print_agent()`, `print_agent_whoami()` for agent output
+- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`, `print_comments()`
 - Uses `tabled` crate for table output
 - JSON output via `serde_json::to_string_pretty`
 - Simple output: just IDs, one per line
 - Pretty output: visual kanban board with colored columns (board get only)
-- Deleted items show `[DELETED]` suffix in table output
+- Deleted items show `[DELETED]` suffix, inactive agents show `[INACTIVE]`
 
 ## Dependencies
 
@@ -73,6 +78,7 @@ thiserror = "1.0"                                   # Error handling
 libsql = { version = "0.9", features = ["core"] }  # SQLite database
 tokio = { version = "1.29", features = ["rt", "macros"] }  # Async runtime
 colored = "2.1"                                         # Terminal colors
+names = { version = "0.14.0", default-features = false }  # Random name generation
 ```
 
 ## Build & Test
@@ -91,6 +97,65 @@ cargo clippy
 ./target/debug/agent-board --help
 ```
 
+## Agent Identity System
+
+Agents must register an identity before working on tasks. Identity is tracked via the `AGENT_BOARD_AGENT_ID` environment variable.
+
+### Agent Model
+- **id**: Unique identifier (e.g., `agent_abc123def456`)
+- **name**: Human-readable name (unique, auto-generated if not provided)
+- **command**: The CLI command used to invoke the agent (e.g., `stakpak`, `claude`, `aider`)
+- **working_directory**: Directory where the agent was registered (used for context validation)
+- **description**: Optional description of the agent's purpose
+
+### Agent Commands
+```bash
+# Register a new agent (auto-generated name)
+./target/debug/agent-board agent register --command stakpak
+
+# Register with explicit name
+./target/debug/agent-board agent register --command claude --name code-reviewer --description "Reviews PRs"
+
+# Show current agent identity
+export AGENT_BOARD_AGENT_ID=agent_xxx
+./target/debug/agent-board agent whoami
+
+# List all agents
+./target/debug/agent-board agent list
+./target/debug/agent-board agent list --include-inactive
+
+# Get agent details
+./target/debug/agent-board agent get <agent_id>
+
+# Update agent
+./target/debug/agent-board agent update <agent_id> --name new-name --workdir .
+
+# Unregister (soft delete)
+./target/debug/agent-board agent unregister <agent_id>
+```
+
+### Agent Workflow
+```bash
+# 1. Register once
+agent-board agent register --command stakpak
+# Output: Created agent: agent_abc123 (Name: swift-falcon)
+#         To use this agent, run:
+#           export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# 2. Set env var
+export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# 3. Work on tasks
+agent-board card update card_xxx --status in-progress --assign-to-me
+agent-board mine
+```
+
+### Working Directory Warning
+`whoami` warns if current directory doesn't match registered working directory:
+```
+WARNING: Current directory (/tmp) does not match registered working directory
+```
+
 ## Common Patterns
 
 ### Adding a New Command
@@ -104,7 +169,7 @@ cargo clippy
 
 - Extract values from `cli` before the `match cli.command` block
 - Use `cli.format.clone()` since `OutputFormat` doesn't impl `Copy`
-- Session ID is fetched before match to avoid partial move issues
+- Agent ID is fetched before match to avoid partial move issues
 
 ### Status CLI Values
 
@@ -117,6 +182,13 @@ cargo clippy
 - Override: `AGENT_BOARD_DB_PATH` env var
 - Auto-creates parent directories and initializes schema on first run
 - Uses libsql for SQLite operations
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `AGENT_BOARD_AGENT_ID` | Current agent identity for `mine`, `whoami`, `--assign-to-me` |
+| `AGENT_BOARD_DB_PATH` | Override default database path |
 
 ## Exit Codes
 
@@ -131,7 +203,7 @@ cargo clippy
 
 ## Soft Delete
 
-Boards and cards support soft delete - records are marked with `deleted_at` timestamp rather than being permanently removed.
+Boards, cards, and agents support soft delete - records are marked with `deleted_at` or `deactivated_at` timestamp rather than being permanently removed.
 
 ### Delete Commands
 ```bash
@@ -140,23 +212,29 @@ Boards and cards support soft delete - records are marked with `deleted_at` time
 
 # Delete a board (soft delete, cascades to all cards in board)
 ./target/debug/agent-board board delete <board_id>
+
+# Unregister an agent (soft delete)
+./target/debug/agent-board agent unregister <agent_id>
 ```
 
-### Viewing Deleted Items
+### Viewing Deleted/Inactive Items
 ```bash
 # List boards including deleted ones
 ./target/debug/agent-board board list --include-deleted
 
 # List cards including deleted ones (works even on deleted boards)
 ./target/debug/agent-board card list <board_id> --include-deleted
+
+# List agents including inactive ones
+./target/debug/agent-board agent list --include-inactive
 ```
 
-Deleted items display with `[DELETED]` suffix in table output.
+Deleted items display with `[DELETED]` suffix, inactive agents show `[INACTIVE]`.
 
 ### Implementation Notes
-- All list/get queries filter `WHERE deleted_at IS NULL` by default
+- All list/get queries filter `WHERE deleted_at IS NULL` or `WHERE deactivated_at IS NULL` by default
 - Board deletion cascades: soft-deletes all cards in that board
-- `--include-deleted` flag bypasses the filter to show all records
+- `--include-deleted` / `--include-inactive` flags bypass the filter to show all records
 - Data is preserved in DB for potential recovery (restore not yet implemented)
 
 ## Visual Kanban Board
@@ -199,6 +277,7 @@ Example output:
 - [x] Add `card delete` command
 - [x] Add `board delete` command
 - [x] Add `--format pretty` for visual kanban board
-- [ ] Add `card restore` / `board restore` commands
+- [x] Add agent identity system
+- [ ] Add `card restore` / `board restore` / `agent reactivate` commands
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations

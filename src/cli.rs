@@ -1,6 +1,6 @@
-use clap::{Parser, Subcommand};
-use crate::models::{OutputFormat, Status};
 use crate::AgentBoardError;
+use crate::models::{OutputFormat, Status};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "taskboard")]
@@ -31,15 +31,16 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn get_session_id(&self) -> Result<String, AgentBoardError> {
-        std::env::var("AGENT_BOARD_SESSION_ID")
-            .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))
+    pub fn get_agent_id(&self) -> Result<String, AgentBoardError> {
+        std::env::var("AGENT_BOARD_AGENT_ID").map_err(|_| {
+            AgentBoardError::InvalidArgs("AGENT_BOARD_AGENT_ID environment variable not set".into())
+        })
     }
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Get all cards assigned to current user
+    /// Get all cards assigned to current agent
     Mine {
         /// Filter by board
         #[arg(long)]
@@ -52,6 +53,12 @@ pub enum Commands {
         /// Output format
         #[arg(long)]
         format: Option<OutputFormat>,
+    },
+
+    /// Agent identity operations
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommands,
     },
 
     /// Card operations
@@ -76,6 +83,76 @@ pub enum Commands {
     Board {
         #[command(subcommand)]
         command: BoardCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AgentCommands {
+    /// Register a new agent identity
+    Register {
+        /// Command to invoke this agent (e.g., stakpak, claude, aider)
+        #[arg(long)]
+        command: String,
+
+        /// Agent name (auto-generated if not provided)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Agent description
+        #[arg(long)]
+        description: Option<String>,
+    },
+
+    /// Unregister an agent (soft delete)
+    Unregister {
+        /// Agent ID
+        agent_id: String,
+    },
+
+    /// Show current agent identity (from AGENT_BOARD_AGENT_ID)
+    Whoami,
+
+    /// Get agent details
+    Get {
+        /// Agent ID
+        agent_id: String,
+
+        /// Output format
+        #[arg(long)]
+        format: Option<OutputFormat>,
+    },
+
+    /// List all registered agents
+    List {
+        /// Include deactivated agents
+        #[arg(long)]
+        include_inactive: bool,
+
+        /// Output format
+        #[arg(long)]
+        format: Option<OutputFormat>,
+    },
+
+    /// Update agent details
+    Update {
+        /// Agent ID
+        agent_id: String,
+
+        /// Update agent name
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Update command
+        #[arg(long)]
+        command: Option<String>,
+
+        /// Update description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Update working directory (use "." for current directory)
+        #[arg(long)]
+        workdir: Option<String>,
     },
 }
 
@@ -151,12 +228,12 @@ pub enum CardCommands {
         #[arg(long)]
         status: Option<Status>,
 
-        /// Set session ID to assign card (use 'null' to unassign)
+        /// Assign card to agent ID (use 'null' to unassign)
         #[arg(long, conflicts_with = "assign_to_me")]
-        agent_session_id: Option<String>,
+        assign: Option<String>,
 
-        /// Assign card to current session (uses AGENT_BOARD_SESSION_ID)
-        #[arg(long, conflicts_with = "agent_session_id")]
+        /// Assign card to current agent (uses AGENT_BOARD_AGENT_ID)
+        #[arg(long, conflicts_with = "assign")]
         assign_to_me: bool,
 
         /// Add tag (repeatable)
