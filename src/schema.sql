@@ -1,6 +1,18 @@
 -- Agent Board SQLite Schema
 -- Migrated from JSON file storage to libsql
 
+-- Agents table
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    command TEXT NOT NULL,
+    working_directory TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deactivated_at TEXT
+);
+
 -- Boards table
 CREATE TABLE IF NOT EXISTS boards (
     id TEXT PRIMARY KEY NOT NULL,

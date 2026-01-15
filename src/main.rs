@@ -3,18 +3,20 @@ mod db;
 mod models;
 mod output;
 
-use cli::{Cli, Commands, CardCommands, ChecklistCommands, CommentCommands, BoardCommands};
 use clap::Parser;
+use cli::{
+    AgentCommands, BoardCommands, CardCommands, ChecklistCommands, Cli, Commands, CommentCommands,
+};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    
+
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");
-    
+
     match rt.block_on(run(cli)) {
         Ok(()) => ExitCode::from(0),
         Err(e) => {
@@ -28,44 +30,174 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
     let db = db::Database::load(&cli).await?;
     let default_format = cli.format.clone();
     let quiet = cli.quiet;
-    let session_id_result = cli.get_session_id();
-    
+    let agent_id_result = cli.get_agent_id();
+
     match cli.command {
-        Commands::Mine { board, status, format } => {
-            let session_id = session_id_result?;
-            let cards = db.get_cards_by_assignee(&session_id, board.as_deref(), status).await?;
+        Commands::Mine {
+            board,
+            status,
+            format,
+        } => {
+            let agent_id = agent_id_result?;
+            let cards = db
+                .get_cards_by_assignee(&agent_id, board.as_deref(), status)
+                .await?;
             output::print_cards(&cards, format.unwrap_or(default_format));
         }
+        Commands::Agent { command } => match command {
+            AgentCommands::Register {
+                command,
+                name,
+                description,
+            } => {
+                let cwd = std::env::current_dir()
+                    .map_err(|e| {
+                        AgentBoardError::General(format!("Failed to get current directory: {}", e))
+                    })?
+                    .to_string_lossy()
+                    .to_string();
+                let agent = db
+                    .register_agent(name, command, cwd.clone(), description)
+                    .await?;
+                if !quiet {
+                    println!("Created agent: {} (Name: {})", agent.id, agent.name);
+                    println!("Working directory: {}", cwd);
+                    println!();
+                    println!("To use this agent, run:");
+                    println!("  export AGENT_BOARD_AGENT_ID={}", agent.id);
+                }
+            }
+            AgentCommands::Unregister { agent_id } => {
+                db.unregister_agent(&agent_id).await?;
+                if !quiet {
+                    println!("Unregistered agent: {}", agent_id);
+                }
+            }
+            AgentCommands::Whoami => {
+                let agent_id = agent_id_result?;
+                let agent = db.get_agent(&agent_id).await?;
+                let cwd = std::env::current_dir()
+                    .map_err(|e| {
+                        AgentBoardError::General(format!("Failed to get current directory: {}", e))
+                    })?
+                    .to_string_lossy()
+                    .to_string();
+                output::print_agent_whoami(&agent, &cwd);
+            }
+            AgentCommands::Get { agent_id, format } => {
+                let agent = db.get_agent(&agent_id).await?;
+                output::print_agent(&agent, format.unwrap_or(default_format));
+            }
+            AgentCommands::List {
+                include_inactive,
+                format,
+            } => {
+                let agents = db.list_agents(include_inactive).await?;
+                output::print_agents(&agents, format.unwrap_or(default_format));
+            }
+            AgentCommands::Update {
+                agent_id,
+                name,
+                command,
+                description,
+                workdir,
+            } => {
+                let working_directory = match workdir {
+                    Some(w) if w == "." => Some(
+                        std::env::current_dir()
+                            .map_err(|e| {
+                                AgentBoardError::General(format!(
+                                    "Failed to get current directory: {}",
+                                    e
+                                ))
+                            })?
+                            .to_string_lossy()
+                            .to_string(),
+                    ),
+                    Some(w) => Some(w),
+                    None => None,
+                };
+                let update = models::AgentUpdate {
+                    name,
+                    command,
+                    description,
+                    working_directory,
+                };
+                db.update_agent(&agent_id, update).await?;
+                if !quiet {
+                    println!("Updated agent: {}", agent_id);
+                }
+            }
+        },
         Commands::Card { command } => match command {
             CardCommands::Get { card_id, format } => {
                 let card = db.get_card(&card_id).await?;
                 let comments = db.list_comments(&card_id).await?;
                 output::print_card(&card, &comments, format.unwrap_or(default_format));
             }
-            CardCommands::List { board_id, status, assigned_to, tag, include_deleted, format } => {
-                let cards = db.list_cards(&board_id, status, assigned_to.as_deref(), &tag, include_deleted).await?;
+            CardCommands::List {
+                board_id,
+                status,
+                assigned_to,
+                tag,
+                include_deleted,
+                format,
+            } => {
+                let cards = db
+                    .list_cards(
+                        &board_id,
+                        status,
+                        assigned_to.as_deref(),
+                        &tag,
+                        include_deleted,
+                    )
+                    .await?;
                 output::print_cards(&cards, format.unwrap_or(default_format));
             }
-            CardCommands::Create { board_id, name, description, status } => {
+            CardCommands::Create {
+                board_id,
+                name,
+                description,
+                status,
+            } => {
                 let card = db.create_card(&board_id, name, description, status).await?;
                 if !quiet {
                     println!("Created card: {}", card.id);
                 }
             }
-            CardCommands::Update { card_id, name, description, status, agent_session_id, assign_to_me, add_tag, remove_tag } => {
-                let session_id = match (&agent_session_id, assign_to_me) {
+            CardCommands::Update {
+                card_id,
+                name,
+                description,
+                status,
+                assign,
+                assign_to_me,
+                add_tag,
+                remove_tag,
+            } => {
+                let agent_id = match (&assign, assign_to_me) {
                     (Some(s), _) if s == "null" => Some(None), // explicit unassign
                     (Some(s), _) => Some(Some(s.clone())),     // explicit assign
                     (None, true) => {
-                        // --assign-to-me flag: use current session ID
-                        Some(Some(std::env::var("AGENT_BOARD_SESSION_ID")
-                            .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))?))
+                        // --assign-to-me flag: use current agent ID
+                        Some(Some(std::env::var("AGENT_BOARD_AGENT_ID").map_err(
+                            |_| {
+                                AgentBoardError::InvalidArgs(
+                                    "AGENT_BOARD_AGENT_ID environment variable not set".into(),
+                                )
+                            },
+                        )?))
                     }
                     (None, false) => {
-                        // Use env var session ID if status is being changed to in_progress
+                        // Use env var agent ID if status is being changed to in_progress
                         if status == Some(models::Status::InProgress) {
-                            Some(Some(std::env::var("AGENT_BOARD_SESSION_ID")
-                                .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_SESSION_ID environment variable not set".into()))?))
+                            Some(Some(std::env::var("AGENT_BOARD_AGENT_ID").map_err(
+                                |_| {
+                                    AgentBoardError::InvalidArgs(
+                                        "AGENT_BOARD_AGENT_ID environment variable not set".into(),
+                                    )
+                                },
+                            )?))
                         } else {
                             None // no change to assignment
                         }
@@ -75,7 +207,7 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     name,
                     description,
                     status,
-                    session_id,
+                    session_id: agent_id,
                     add_tags: add_tag,
                     remove_tags: remove_tag,
                 };
@@ -92,7 +224,11 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             }
         },
         Commands::Checklist { command } => match command {
-            ChecklistCommands::Add { card_id, name, item } => {
+            ChecklistCommands::Add {
+                card_id,
+                name,
+                item,
+            } => {
                 let checklist = db.add_checklist(&card_id, name, item).await?;
                 if !quiet {
                     println!("Added checklist: {}", checklist.id);
@@ -101,20 +237,31 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             ChecklistCommands::Check { item_id, uncheck } => {
                 db.check_item(&item_id, !uncheck).await?;
                 if !quiet {
-                    println!("{} item: {}", if uncheck { "Unchecked" } else { "Checked" }, item_id);
+                    println!(
+                        "{} item: {}",
+                        if uncheck { "Unchecked" } else { "Checked" },
+                        item_id
+                    );
                 }
             }
         },
         Commands::Comment { command } => match command {
-            CommentCommands::Add { card_id, text, file } => {
+            CommentCommands::Add {
+                card_id,
+                text,
+                file,
+            } => {
                 let content = if let Some(path) = file {
-                    std::fs::read_to_string(&path)
-                        .map_err(|e| AgentBoardError::General(format!("Failed to read file: {}", e)))?
+                    std::fs::read_to_string(&path).map_err(|e| {
+                        AgentBoardError::General(format!("Failed to read file: {}", e))
+                    })?
                 } else {
-                    text.ok_or(AgentBoardError::InvalidArgs("Either text or --file required".into()))?
+                    text.ok_or(AgentBoardError::InvalidArgs(
+                        "Either text or --file required".into(),
+                    ))?
                 };
-                let session_id = std::env::var("AGENT_BOARD_SESSION_ID").ok();
-                let comment = db.add_comment(&card_id, content, session_id).await?;
+                let agent_id = std::env::var("AGENT_BOARD_AGENT_ID").ok();
+                let comment = db.add_comment(&card_id, content, agent_id).await?;
                 if !quiet {
                     println!("Added comment: {}", comment.id);
                 }
@@ -126,7 +273,10 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let summary = db.get_board_summary(&board_id).await?;
                 output::print_board(&board, &summary, format.unwrap_or(default_format));
             }
-            BoardCommands::List { include_deleted, format } => {
+            BoardCommands::List {
+                include_deleted,
+                format,
+            } => {
                 let boards = db.list_boards(include_deleted).await?;
                 output::print_boards(&boards, format.unwrap_or(default_format));
             }
@@ -144,7 +294,7 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             }
         },
     }
-    
+
     db.save().await?;
     Ok(())
 }
