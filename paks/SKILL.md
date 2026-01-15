@@ -21,11 +21,7 @@ metadata:
   version: "0.1.2"
 ---
 
-# Agent-Board CLI for AI Agents
-
-## Overview
-
-`agent-board` is a command-line task management tool designed for AI coding agents and humans. It provides a local SQLite-based task board for tracking work items, checklists, and comments without requiring an external API.
+# Agent-Board CLI
 
 ## Quick Reference
 
@@ -60,42 +56,16 @@ agent-board mine [--status todo|in-progress|pending-review|done]
 
 ## Installation
 
-### Homebrew (macOS/Linux)
-
 ```bash
-brew tap stakpak/stakpak
-brew install agent-board
-```
+# Homebrew (recommended)
+brew tap stakpak/stakpak && brew install agent-board
 
-### Direct Download
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/stakpak/agent-board/releases):
-
-```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-darwin-aarch64.tar.gz | tar xz
+# Direct download (replace PLATFORM: darwin-aarch64, darwin-x86_64, linux-x86_64, linux-aarch64)
+curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-PLATFORM.tar.gz | tar xz
 sudo mv agent-board /usr/local/bin/
 
-# macOS (Intel)
-curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-darwin-x86_64.tar.gz | tar xz
-sudo mv agent-board /usr/local/bin/
-
-# Linux (x86_64)
-curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-linux-x86_64.tar.gz | tar xz
-sudo mv agent-board /usr/local/bin/
-
-# Linux (ARM64)
-curl -L https://github.com/stakpak/agent-board/releases/latest/download/agent-board-linux-aarch64.tar.gz | tar xz
-sudo mv agent-board /usr/local/bin/
-```
-
-For Windows, download `agent-board-windows-x86_64.zip` from the releases page and add to your PATH.
-
-### Build from Source
-
-```bash
-cargo build --release
-# Binary at ./target/release/agent-board
+# Build from source
+cargo build --release  # Binary at ./target/release/agent-board
 ```
 
 ## Environment Setup
@@ -259,58 +229,24 @@ agent-board card update card_123 --remove-tag urgent
 
 ## Human Review (Optional)
 
-Cards can flow directly from `in-progress` → `done` without review. Use these mechanisms only when human input is needed.
+Cards can flow `in-progress` → `done` directly. Use these only when human input is needed:
 
-### Two Distinct Scenarios
-
-| Scenario | Mechanism | When to Use |
-|----------|-----------|-------------|
-| **Blocked** | `--add-tag blocked --add-tag needs-human` | You cannot continue without human input (approval, decision, clarification) |
-| **Review requested** | `--status pending-review` | Work is complete, but you want human verification before marking done |
-
-**These are different situations:**
-- `blocked` + `needs-human` = "I'm stuck mid-work and need human help to proceed"
-- `pending-review` = "I finished the work, please verify before I close this out"
-
-### When You're Blocked
-
-Use when you **cannot continue** without human input:
+| Scenario | Mechanism | When |
+|----------|-----------|------|
+| **Blocked** | `--add-tag blocked --add-tag needs-human` | Cannot continue without human input |
+| **Review** | `--status pending-review` | Work done, want human verification |
 
 ```bash
-# You need approval before proceeding
+# Blocked: need human help to proceed
 agent-board card update card_123 --add-tag blocked --add-tag needs-human
-agent-board comment add card_123 "BLOCKED: Need approval on cost estimate before provisioning infrastructure"
+agent-board comment add card_123 "BLOCKED: Need cost approval before provisioning"
 
-# After human responds, they will remove the tags
-# Check your cards to see if you've been unblocked:
-agent-board mine --status in-progress
-```
-
-### When You Want Review (Optional)
-
-Use when work is **complete** but you want human verification:
-
-```bash
-# Request review on completed work
+# Review: work complete, want verification
 agent-board card update card_123 --status pending-review
-agent-board comment add card_123 "Ready for review: Please verify terraform plan output"
-
-# Human will either:
-# - Move to done (approved)
-# - Move back to in-progress with feedback
+agent-board comment add card_123 "Ready for review: verify terraform plan"
 ```
 
-**Note:** If you're confident the work is correct, you can skip review and go directly to `done`.
-
-### Common Tags
-
-| Tag | Meaning |
-|-----|---------|
-| `blocked` | Cannot proceed - waiting on something |
-| `needs-human` | The blocker requires human attention (vs waiting on another agent or external event) |
-| `expedite` | Urgent, need fast turnaround |
-| `security-review` | Needs security sign-off |
-| `cost-approval` | Needs cost/budget approval |
+**Common tags:** `blocked`, `needs-human`, `expedite`, `security-review`, `cost-approval`
 
 ## Best Practices for Agents
 
@@ -325,37 +261,17 @@ agent-board comment add card_123 "Ready for review: Please verify terraform plan
 9. **Use `blocked` + `needs-human` tags** when you cannot continue without human input
 10. **Use `pending-review` status** when work is done but you want human verification (optional)
 
-### Cards vs Checklists: Kanban Thinking
+### Cards vs Checklists
 
-**Cards** = Independent work items that can be tracked, assigned, and moved through workflow stages.
+| Use Cards | Use Checklists |
+|-----------|----------------|
+| Parallelizable work | Sequential steps in one deliverable |
+| Different dependencies | Shared dependencies |
+| Independent status tracking | Linear progress |
 
-**Checklists** = Steps within a single card to track progress on that work item.
+**Simple task:** "Add Docker support" → One card with checklist (Dockerfile, compose, test, docs)
 
-| Use Cards When | Use Checklists When |
-|----------------|---------------------|
-| Work can be parallelized across agents/people | Steps are sequential within one deliverable |
-| Items have different dependencies | All steps share the same dependencies |
-| Each item is independently deployable/usable | Steps combine into one deliverable |
-| Work benefits from separate status tracking | Progress is linear through steps |
-| Complex task needs breakdown for clarity | Simple task with known steps |
-
-### Breaking Down Complex Work
-
-For complex tasks, analyze dependencies first:
-
-1. **Identify parallelizable work** → Create separate cards (can be worked simultaneously)
-2. **Identify sequential steps** → Use checklists within a card
-3. **Identify blocking dependencies** → Create cards with clear dependency notes
-
-**Example - Simple task:** "Add Docker support" → One card with checklist (Dockerfile, compose, test, docs)
-
-**Example - Complex task:** "Migrate to microservices" → Multiple cards:
-- Card: "Extract auth service" (can start immediately)
-- Card: "Extract payment service" (can start immediately, parallel)
-- Card: "Update API gateway" (depends on above two)
-- Card: "Migration testing" (depends on all above)
-
-The goal is manageable, trackable work items - not arbitrary granularity.
+**Complex task:** "Migrate to microservices" → Multiple cards (auth service, payment service, API gateway, testing)
 
 ## Data Location
 
