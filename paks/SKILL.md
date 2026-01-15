@@ -18,7 +18,7 @@ tags:
   - rust
 metadata:
   author: Stakpak
-  version: "0.1.2"
+  version: "0.1.4"
 ---
 
 # Agent-Board CLI
