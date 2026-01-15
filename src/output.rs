@@ -2,6 +2,20 @@ use crate::models::*;
 use tabled::{Table, Tabled, settings::Style};
 
 #[derive(Tabled)]
+struct AgentRow {
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Command")]
+    command: String,
+    #[tabled(rename = "Working Directory")]
+    working_directory: String,
+    #[tabled(rename = "Created")]
+    created_at: String,
+}
+
+#[derive(Tabled)]
 struct CardRow {
     #[tabled(rename = "ID")]
     id: String,
@@ -170,5 +184,75 @@ fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max_len - 3])
+    }
+}
+
+pub fn print_agents(agents: &[Agent], format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&agents).unwrap());
+        }
+        OutputFormat::Table => {
+            if agents.is_empty() {
+                println!("No agents found.");
+                return;
+            }
+            let rows: Vec<AgentRow> = agents.iter().map(|a| {
+                let inactive_marker = if a.deactivated_at.is_some() { " [INACTIVE]" } else { "" };
+                AgentRow {
+                    id: a.id.clone(),
+                    name: format!("{}{}", a.name, inactive_marker),
+                    command: a.command.clone(),
+                    working_directory: truncate(&a.working_directory, 40),
+                    created_at: a.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                }
+            }).collect();
+            let table = Table::new(rows).with(Style::rounded()).to_string();
+            println!("{}", table);
+        }
+        OutputFormat::Simple => {
+            for agent in agents {
+                println!("{}", agent.id);
+            }
+        }
+    }
+}
+
+pub fn print_agent(agent: &Agent, format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&agent).unwrap());
+        }
+        OutputFormat::Table => {
+            println!("Agent: {}", agent.id);
+            println!("Name: {}", agent.name);
+            println!("Command: {}", agent.command);
+            println!("Working Directory: {}", agent.working_directory);
+            if let Some(desc) = &agent.description {
+                println!("Description: {}", desc);
+            }
+            println!("Created: {}", agent.created_at.format("%Y-%m-%d %H:%M"));
+            if let Some(deactivated) = agent.deactivated_at {
+                println!("Deactivated: {}", deactivated.format("%Y-%m-%d %H:%M"));
+            }
+        }
+        OutputFormat::Simple => {
+            println!("{}", agent.id);
+        }
+    }
+}
+
+pub fn print_agent_whoami(agent: &Agent, current_dir: &str) {
+    println!("Agent: {}", agent.id);
+    println!("Name: {}", agent.name);
+    println!("Command: {}", agent.command);
+    println!("Working Directory: {}", agent.working_directory);
+    if let Some(desc) = &agent.description {
+        println!("Description: {}", desc);
+    }
+    
+    // Check if current directory matches
+    if current_dir != agent.working_directory {
+        eprintln!("WARNING: Current directory ({}) does not match registered working directory", current_dir);
     }
 }

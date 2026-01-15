@@ -73,6 +73,147 @@ impl Database {
         }
     }
 
+    fn generate_agent_name() -> String {
+        let mut generator = names::Generator::default();
+        generator.next().unwrap_or_else(|| "unnamed-agent".to_string())
+    }
+
+    // Agent operations
+    pub async fn register_agent(
+        &self,
+        name: Option<String>,
+        command: String,
+        working_directory: String,
+        description: Option<String>,
+    ) -> Result<Agent, AgentBoardError> {
+        let agent_name = name.unwrap_or_else(Self::generate_agent_name);
+        let id = Self::generate_id("agent");
+        let now = Utc::now().to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT INTO agents (id, name, command, working_directory, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                libsql::params![id.as_str(), agent_name.as_str(), command.as_str(), working_directory.as_str(), description.clone().unwrap_or_default().as_str(), now.as_str(), now.as_str()],
+            )
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("UNIQUE constraint failed") {
+                    AgentBoardError::InvalidArgs(format!("Agent name '{}' already exists", agent_name))
+                } else {
+                    AgentBoardError::General(format!("Insert failed: {}", e))
+                }
+            })?;
+
+        self.get_agent(&id).await
+    }
+
+    pub async fn get_agent(&self, agent_id: &str) -> Result<Agent, AgentBoardError> {
+        let mut rows = self.conn
+            .query(
+                "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents WHERE id = ?1 AND deactivated_at IS NULL",
+                [agent_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        if let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            Ok(Agent {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                command: row.get::<String>(2).unwrap_or_default(),
+                working_directory: row.get::<String>(3).unwrap_or_default(),
+                description: row.get::<Option<String>>(4).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(5).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(6).unwrap_or_default()),
+                deactivated_at: row.get::<Option<String>>(7).ok().flatten().map(|s| Self::parse_datetime(&s)),
+            })
+        } else {
+            Err(AgentBoardError::NotFound(format!("Agent not found: {}", agent_id)))
+        }
+    }
+
+    pub async fn list_agents(&self, include_inactive: bool) -> Result<Vec<Agent>, AgentBoardError> {
+        let query = if include_inactive {
+            "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents ORDER BY created_at DESC"
+        } else {
+            "SELECT id, name, command, working_directory, description, created_at, updated_at, deactivated_at FROM agents WHERE deactivated_at IS NULL ORDER BY created_at DESC"
+        };
+        let mut rows = self.conn
+            .query(query, ())
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut agents = Vec::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            agents.push(Agent {
+                id: row.get::<String>(0).unwrap_or_default(),
+                name: row.get::<String>(1).unwrap_or_default(),
+                command: row.get::<String>(2).unwrap_or_default(),
+                working_directory: row.get::<String>(3).unwrap_or_default(),
+                description: row.get::<Option<String>>(4).ok().flatten(),
+                created_at: Self::parse_datetime(&row.get::<String>(5).unwrap_or_default()),
+                updated_at: Self::parse_datetime(&row.get::<String>(6).unwrap_or_default()),
+                deactivated_at: row.get::<Option<String>>(7).ok().flatten().map(|s| Self::parse_datetime(&s)),
+            });
+        }
+        Ok(agents)
+    }
+
+    pub async fn update_agent(&self, agent_id: &str, update: AgentUpdate) -> Result<(), AgentBoardError> {
+        // Verify agent exists
+        self.get_agent(agent_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+
+        if let Some(n) = update.name {
+            self.conn
+                .execute("UPDATE agents SET name = ?1, updated_at = ?2 WHERE id = ?3", [&n, &now, agent_id])
+                .await
+                .map_err(|e| {
+                    if e.to_string().contains("UNIQUE constraint failed") {
+                        AgentBoardError::InvalidArgs(format!("Agent name '{}' already exists", n))
+                    } else {
+                        AgentBoardError::General(format!("Update failed: {}", e))
+                    }
+                })?;
+        }
+        if let Some(c) = update.command {
+            self.conn
+                .execute("UPDATE agents SET command = ?1, updated_at = ?2 WHERE id = ?3", [&c, &now, agent_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        if let Some(d) = update.description {
+            self.conn
+                .execute("UPDATE agents SET description = ?1, updated_at = ?2 WHERE id = ?3", [&d, &now, agent_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        if let Some(w) = update.working_directory {
+            self.conn
+                .execute("UPDATE agents SET working_directory = ?1, updated_at = ?2 WHERE id = ?3", [&w, &now, agent_id])
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    pub async fn unregister_agent(&self, agent_id: &str) -> Result<(), AgentBoardError> {
+        // Verify agent exists
+        self.get_agent(agent_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE agents SET deactivated_at = ?1, updated_at = ?1 WHERE id = ?2",
+                [&now, agent_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Unregister failed: {}", e)))?;
+
+        Ok(())
+    }
+
     // Board operations
     pub async fn list_boards(&self, include_deleted: bool) -> Result<Vec<Board>, AgentBoardError> {
         let query = if include_deleted {
