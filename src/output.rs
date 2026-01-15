@@ -223,14 +223,24 @@ fn truncate(s: &str, max_len: usize) -> String {
 }
 
 /// Print a visual kanban board with cards organized by status columns
-pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collections::HashMap<String, usize>) {
+pub fn print_kanban(
+    board: &Board,
+    cards: &[Card],
+    comment_counts: &std::collections::HashMap<String, usize>,
+) {
     const COL_WIDTH: usize = 28;
     const CARD_INNER: usize = COL_WIDTH - 4; // Account for borders and padding
 
     // Group cards by status
     let todo: Vec<_> = cards.iter().filter(|c| c.status == Status::Todo).collect();
-    let in_progress: Vec<_> = cards.iter().filter(|c| c.status == Status::InProgress).collect();
-    let pending_review: Vec<_> = cards.iter().filter(|c| c.status == Status::PendingReview).collect();
+    let in_progress: Vec<_> = cards
+        .iter()
+        .filter(|c| c.status == Status::InProgress)
+        .collect();
+    let pending_review: Vec<_> = cards
+        .iter()
+        .filter(|c| c.status == Status::PendingReview)
+        .collect();
     let done: Vec<_> = cards.iter().filter(|c| c.status == Status::Done).collect();
 
     // Board header
@@ -239,13 +249,19 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
     let title = format!("{} - {}", board.name, board.id);
     println!("│ {:<width$} │", title, width = COL_WIDTH * 4 + 1);
     if let Some(desc) = &board.description {
-        println!("│ {:<width$} │", truncate(desc, COL_WIDTH * 4 - 1), width = COL_WIDTH * 4 + 1);
+        println!(
+            "│ {:<width$} │",
+            truncate(desc, COL_WIDTH * 4 - 1),
+            width = COL_WIDTH * 4 + 1
+        );
     }
-    println!("├{}┬{}┬{}┬{}┤", 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH));
+    println!(
+        "├{}┬{}┬{}┬{}┤",
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH)
+    );
 
     // Column headers with colors
     let header_colors = [
@@ -262,23 +278,35 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
 
     // Counts
     print!("│");
-    for count in [todo.len(), in_progress.len(), pending_review.len(), done.len()] {
+    for count in [
+        todo.len(),
+        in_progress.len(),
+        pending_review.len(),
+        done.len(),
+    ] {
         let count_str = format!("({} cards)", count);
         print!(" {:<width$}│", count_str, width = COL_WIDTH - 1);
     }
     println!();
 
-    println!("├{}┼{}┼{}┼{}┤", 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH));
+    println!(
+        "├{}┼{}┼{}┼{}┤",
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH)
+    );
 
     // Find max cards in any column
-    let max_cards = [todo.len(), in_progress.len(), pending_review.len(), done.len()]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+    let max_cards = [
+        todo.len(),
+        in_progress.len(),
+        pending_review.len(),
+        done.len(),
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0);
 
     let columns = [&todo, &in_progress, &pending_review, &done];
 
@@ -368,7 +396,11 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
                 let card = col[i];
                 let assignee = card.assigned_to.as_deref().unwrap_or("-");
                 let assignee_display = format!("@{}", truncate(assignee, CARD_INNER - 4));
-                print!(" │ {:<width$} │ │", assignee_display, width = CARD_INNER - 2);
+                print!(
+                    " │ {:<width$} │ │",
+                    assignee_display,
+                    width = CARD_INNER - 2
+                );
             } else {
                 print!("{:width$}│", "", width = COL_WIDTH);
             }
@@ -383,7 +415,12 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
                 if card.tags.is_empty() {
                     print!(" │ {:<width$} │ │", "", width = CARD_INNER - 2);
                 } else {
-                    let tags_str = card.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" ");
+                    let tags_str = card
+                        .tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     let line1 = if tags_str.len() > CARD_INNER - 2 {
                         &tags_str[..CARD_INNER - 2]
                     } else {
@@ -406,7 +443,12 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
                 if card.tags.is_empty() {
                     print!(" │ {:<width$} │ │", "", width = CARD_INNER - 2);
                 } else {
-                    let tags_str = card.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" ");
+                    let tags_str = card
+                        .tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     let line2 = if tags_str.len() > CARD_INNER - 2 {
                         let remaining = &tags_str[CARD_INNER - 2..];
                         truncate(remaining, CARD_INNER - 2)
@@ -463,11 +505,13 @@ pub fn print_kanban(board: &Board, cards: &[Card], comment_counts: &std::collect
     }
 
     // Bottom border
-    println!("└{}┴{}┴{}┴{}┘", 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH), 
-        "─".repeat(COL_WIDTH));
+    println!(
+        "└{}┴{}┴{}┴{}┘",
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH),
+        "─".repeat(COL_WIDTH)
+    );
     println!();
 }
 
