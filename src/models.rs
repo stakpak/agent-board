@@ -61,6 +61,8 @@ pub enum OutputFormat {
     #[default]
     Table,
     Simple,
+    /// Visual kanban board display
+    Pretty,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
