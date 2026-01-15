@@ -123,8 +123,16 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
         Commands::Board { command } => match command {
             BoardCommands::Get { board_id, format } => {
                 let board = db.get_board(&board_id).await?;
-                let summary = db.get_board_summary(&board_id).await?;
-                output::print_board(&board, &summary, format.unwrap_or(default_format));
+                let fmt = format.unwrap_or(default_format);
+                if fmt == models::OutputFormat::Pretty {
+                    let cards = db.list_cards(&board_id, None, None, &[], false).await?;
+                    let card_ids: Vec<String> = cards.iter().map(|c| c.id.clone()).collect();
+                    let comment_counts = db.get_comment_counts(&card_ids).await?;
+                    output::print_kanban(&board, &cards, &comment_counts);
+                } else {
+                    let summary = db.get_board_summary(&board_id).await?;
+                    output::print_board(&board, &summary, fmt);
+                }
             }
             BoardCommands::List { include_deleted, format } => {
                 let boards = db.list_boards(include_deleted).await?;

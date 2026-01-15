@@ -604,4 +604,34 @@ impl Database {
         }
         Ok(comments)
     }
+
+    /// Get comment counts for multiple cards at once
+    pub async fn get_comment_counts(&self, card_ids: &[String]) -> Result<std::collections::HashMap<String, usize>, AgentBoardError> {
+        use std::collections::HashMap;
+        
+        if card_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders: Vec<String> = card_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let query = format!(
+            "SELECT card_id, COUNT(*) as cnt FROM comments WHERE card_id IN ({}) GROUP BY card_id",
+            placeholders.join(", ")
+        );
+
+        let params: Vec<libsql::Value> = card_ids.iter().map(|id| libsql::Value::from(id.clone())).collect();
+        
+        let mut rows = self.conn
+            .query(&query, libsql::params_from_iter(params))
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut counts = HashMap::new();
+        while let Some(row) = rows.next().await.map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))? {
+            let card_id: String = row.get(0).unwrap_or_default();
+            let count: i64 = row.get(1).unwrap_or(0);
+            counts.insert(card_id, count as usize);
+        }
+        Ok(counts)
+    }
 }

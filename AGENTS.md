@@ -32,7 +32,7 @@ src/
 
 ### models.rs
 - `Status` enum: `Todo`, `InProgress`, `PendingReview`, `Done` (serde snake_case)
-- `OutputFormat` enum: `Json`, `Table`, `Simple`
+- `OutputFormat` enum: `Json`, `Table`, `Simple`, `Pretty`
 - `CardUpdate` struct for update operations (avoids too-many-args clippy warning)
 - `Board`, `Card`, `Checklist`, `ChecklistItem`, `Comment` structs
 - `Board` and `Card` have `deleted_at: Option<DateTime<Utc>>` for soft delete
@@ -52,10 +52,11 @@ src/
 - Indexes for common queries (board_id, status, assigned_to)
 
 ### output.rs
-- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_comments()`
+- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`
 - Uses `tabled` crate for table output
 - JSON output via `serde_json::to_string_pretty`
 - Simple output: just IDs, one per line
+- Pretty output: visual kanban board with colored columns (board get only)
 - Deleted items show `[DELETED]` suffix in table output
 
 ## Dependencies
@@ -71,6 +72,7 @@ tabled = "0.15"                                     # Table output
 thiserror = "1.0"                                   # Error handling
 libsql = { version = "0.9", features = ["core"] }  # SQLite database
 tokio = { version = "1.29", features = ["rt", "macros"] }  # Async runtime
+colored = "2.1"                                         # Terminal colors
 ```
 
 ## Build & Test
@@ -157,11 +159,46 @@ Deleted items display with `[DELETED]` suffix in table output.
 - `--include-deleted` flag bypasses the filter to show all records
 - Data is preserved in DB for potential recovery (restore not yet implemented)
 
+## Visual Kanban Board
+
+Display a board as a visual kanban with `--format pretty`:
+
+```bash
+./target/debug/agent-board board get <board_id> --format pretty
+```
+
+Features:
+- 4-column layout: TODO → IN PROGRESS → PENDING REVIEW → DONE
+- Color-coded headers and card names by status
+- Cards display: title (2 lines), ID, assignee, tags (2 lines), comment count
+- Tags shown in blue, IDs and comments dimmed
+
+Example output:
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ My Board - board_abc123                                                                                           │
+├────────────────────────────┬────────────────────────────┬────────────────────────────┬────────────────────────────┤
+│ TODO                       │ IN PROGRESS                │ PENDING REVIEW             │ DONE                       │
+│ (2 cards)                  │ (1 cards)                  │ (0 cards)                  │ (3 cards)                  │
+├────────────────────────────┼────────────────────────────┼────────────────────────────┼────────────────────────────┤
+│ ┌────────────────────────┐ │ ┌────────────────────────┐ │                            │ ┌────────────────────────┐ │
+│ │ Task name here         │ │ │ Another task           │ │                            │ │ Completed task         │ │
+│ │                        │ │ │                        │ │                            │ │                        │ │
+│ │ card_xyz789            │ │ │ card_def456            │ │                            │ │ card_ghi012            │ │
+│ │ @agent_session_id      │ │ │ @agent_session_id      │ │                            │ │ @agent_session_id      │ │
+│ │ #tag1 #tag2            │ │ │ #urgent                │ │                            │ │                        │ │
+│ │                        │ │ │                        │ │                            │ │                        │ │
+│ │ [2 comments]           │ │ │ [0 comments]           │ │                            │ │ [5 comments]           │ │
+│ └────────────────────────┘ │ └────────────────────────┘ │                            │ └────────────────────────┘ │
+└────────────────────────────┴────────────────────────────┴────────────────────────────┴────────────────────────────┘
+```
+
 ## Future Improvements
 
 - [ ] Add `--filter` for more flexible queries
 - [x] Add `card delete` command
 - [x] Add `board delete` command
+- [x] Add `--format pretty` for visual kanban board
 - [ ] Add `card restore` / `board restore` commands
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations
