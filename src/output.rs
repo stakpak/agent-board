@@ -53,17 +53,24 @@ pub fn print_cards(cards: &[Card], format: OutputFormat) {
                 println!("No cards found.");
                 return;
             }
-            let rows: Vec<CardRow> = cards.iter().map(|c| {
-                let deleted_marker = if c.deleted_at.is_some() { " [DELETED]" } else { "" };
-                CardRow {
-                    id: c.id.clone(),
-                    name: format!("{}{}", truncate(&c.name, 35), deleted_marker),
-                    status: c.status.to_string(),
-                    assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
-                    board_id: c.board_id.clone(),
-                    created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                }
-            }).collect();
+            let rows: Vec<CardRow> = cards
+                .iter()
+                .map(|c| {
+                    let deleted_marker = if c.deleted_at.is_some() {
+                        " [DELETED]"
+                    } else {
+                        ""
+                    };
+                    CardRow {
+                        id: c.id.clone(),
+                        name: format!("{}{}", truncate(&c.name, 35), deleted_marker),
+                        status: c.status.to_string(),
+                        assigned_to: c.assigned_to.clone().unwrap_or_else(|| "-".to_string()),
+                        board_id: c.board_id.clone(),
+                        created_at: c.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                    }
+                })
+                .collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);
         }
@@ -89,7 +96,10 @@ pub fn print_card(card: &Card, comments: &[Comment], format: OutputFormat) {
             println!("Name: {}", card.name);
             println!("Board: {}", card.board_id);
             println!("Status: {}", card.status);
-            println!("Assigned To: {}", card.assigned_to.as_deref().unwrap_or("-"));
+            println!(
+                "Assigned To: {}",
+                card.assigned_to.as_deref().unwrap_or("-")
+            );
             if let Some(desc) = &card.description {
                 println!("Description: {}", desc);
             }
@@ -131,15 +141,22 @@ pub fn print_boards(boards: &[Board], format: OutputFormat) {
                 println!("No boards found.");
                 return;
             }
-            let rows: Vec<BoardRow> = boards.iter().map(|b| {
-                let deleted_marker = if b.deleted_at.is_some() { " [DELETED]" } else { "" };
-                BoardRow {
-                    id: b.id.clone(),
-                    name: format!("{}{}", b.name, deleted_marker),
-                    description: b.description.clone().unwrap_or_else(|| "-".to_string()),
-                    created_at: b.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                }
-            }).collect();
+            let rows: Vec<BoardRow> = boards
+                .iter()
+                .map(|b| {
+                    let deleted_marker = if b.deleted_at.is_some() {
+                        " [DELETED]"
+                    } else {
+                        ""
+                    };
+                    BoardRow {
+                        id: b.id.clone(),
+                        name: format!("{}{}", b.name, deleted_marker),
+                        description: b.description.clone().unwrap_or_else(|| "-".to_string()),
+                        created_at: b.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                    }
+                })
+                .collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);
         }
@@ -197,16 +214,23 @@ pub fn print_agents(agents: &[Agent], format: OutputFormat) {
                 println!("No agents found.");
                 return;
             }
-            let rows: Vec<AgentRow> = agents.iter().map(|a| {
-                let inactive_marker = if a.deactivated_at.is_some() { " [INACTIVE]" } else { "" };
-                AgentRow {
-                    id: a.id.clone(),
-                    name: format!("{}{}", a.name, inactive_marker),
-                    command: a.command.clone(),
-                    working_directory: truncate(&a.working_directory, 40),
-                    created_at: a.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                }
-            }).collect();
+            let rows: Vec<AgentRow> = agents
+                .iter()
+                .map(|a| {
+                    let inactive_marker = if a.deactivated_at.is_some() {
+                        " [INACTIVE]"
+                    } else {
+                        ""
+                    };
+                    AgentRow {
+                        id: a.id.clone(),
+                        name: format!("{}{}", a.name, inactive_marker),
+                        command: a.command.clone(),
+                        working_directory: truncate(&a.working_directory, 40),
+                        created_at: a.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                    }
+                })
+                .collect();
             let table = Table::new(rows).with(Style::rounded()).to_string();
             println!("{}", table);
         }
@@ -250,9 +274,12 @@ pub fn print_agent_whoami(agent: &Agent, current_dir: &str) {
     if let Some(desc) = &agent.description {
         println!("Description: {}", desc);
     }
-    
+
     // Check if current directory matches
     if current_dir != agent.working_directory {
-        eprintln!("WARNING: Current directory ({}) does not match registered working directory", current_dir);
+        eprintln!(
+            "WARNING: Current directory ({}) does not match registered working directory",
+            current_dir
+        );
     }
 }

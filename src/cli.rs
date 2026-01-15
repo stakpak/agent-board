@@ -1,6 +1,6 @@
-use clap::{Parser, Subcommand};
-use crate::models::{OutputFormat, Status};
 use crate::AgentBoardError;
+use crate::models::{OutputFormat, Status};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "taskboard")]
@@ -32,8 +32,9 @@ pub struct Cli {
 
 impl Cli {
     pub fn get_agent_id(&self) -> Result<String, AgentBoardError> {
-        std::env::var("AGENT_BOARD_AGENT_ID")
-            .map_err(|_| AgentBoardError::InvalidArgs("AGENT_BOARD_AGENT_ID environment variable not set".into()))
+        std::env::var("AGENT_BOARD_AGENT_ID").map_err(|_| {
+            AgentBoardError::InvalidArgs("AGENT_BOARD_AGENT_ID environment variable not set".into())
+        })
     }
 }
 
