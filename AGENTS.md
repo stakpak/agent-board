@@ -26,7 +26,7 @@ src/
 
 ### cli.rs
 - `Cli` struct with global options (`--format`, `--quiet`, `--verbose`)
-- `Commands` enum: `Mine`, `Agent`, `Card`, `Checklist`, `Comment`, `Board`
+- `Commands` enum: `Get`, `Mine`, `Agent`, `Card`, `Checklist`, `Comment`, `Board`
 - Subcommand enums: `AgentCommands`, `CardCommands`, `ChecklistCommands`, `CommentCommands`, `BoardCommands`
 - Uses clap derive macros
 
@@ -124,8 +124,8 @@ export AGENT_BOARD_AGENT_ID=agent_xxx
 ./target/debug/agent-board agent list
 ./target/debug/agent-board agent list --include-inactive
 
-# Get agent details
-./target/debug/agent-board agent get <agent_id>
+# Get agent details (uses top-level get command)
+./target/debug/agent-board get <agent_id>
 
 # Update agent
 ./target/debug/agent-board agent update <agent_id> --name new-name --workdir .
@@ -242,7 +242,7 @@ Deleted items display with `[DELETED]` suffix, inactive agents show `[INACTIVE]`
 Display a board as a visual kanban with `--format pretty`:
 
 ```bash
-./target/debug/agent-board board get <board_id> --format pretty
+./target/debug/agent-board get <board_id> --format pretty
 ```
 
 Features:
@@ -278,6 +278,7 @@ Example output:
 - [x] Add `board delete` command
 - [x] Add `--format pretty` for visual kanban board
 - [x] Add agent identity system
+- [x] Add top-level `get` command (auto-detects entity type from ID prefix)
 - [ ] Add `card restore` / `board restore` / `agent reactivate` commands
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations
