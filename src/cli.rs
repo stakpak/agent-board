@@ -40,6 +40,16 @@ impl Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Get any entity by ID (auto-detects type from prefix: agent_, board_, card_)
+    Get {
+        /// Entity ID (e.g., board_xxx, card_xxx, agent_xxx)
+        id: String,
+
+        /// Output format
+        #[arg(long)]
+        format: Option<OutputFormat>,
+    },
+
     /// Get all cards assigned to current agent
     Mine {
         /// Filter by board
@@ -112,16 +122,6 @@ pub enum AgentCommands {
     /// Show current agent identity (from AGENT_BOARD_AGENT_ID)
     Whoami,
 
-    /// Get agent details
-    Get {
-        /// Agent ID
-        agent_id: String,
-
-        /// Output format
-        #[arg(long)]
-        format: Option<OutputFormat>,
-    },
-
     /// List all registered agents
     List {
         /// Include deactivated agents
@@ -158,16 +158,6 @@ pub enum AgentCommands {
 
 #[derive(Subcommand, Debug)]
 pub enum CardCommands {
-    /// Retrieve full card details
-    Get {
-        /// Card ID
-        card_id: String,
-
-        /// Output format
-        #[arg(long)]
-        format: Option<OutputFormat>,
-    },
-
     /// Query cards on a board
     List {
         /// Board ID
@@ -297,16 +287,6 @@ pub enum CommentCommands {
 
 #[derive(Subcommand, Debug)]
 pub enum BoardCommands {
-    /// Get board overview and summary
-    Get {
-        /// Board ID
-        board_id: String,
-
-        /// Output format
-        #[arg(long)]
-        format: Option<OutputFormat>,
-    },
-
     /// List all accessible boards
     List {
         /// Include soft-deleted boards

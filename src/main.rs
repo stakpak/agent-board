@@ -33,6 +33,33 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
     let agent_id_result = cli.get_agent_id();
 
     match cli.command {
+        Commands::Get { id, format } => {
+            let fmt = format.unwrap_or(default_format);
+            if id.starts_with("agent_") {
+                let agent = db.get_agent(&id).await?;
+                output::print_agent(&agent, fmt);
+            } else if id.starts_with("board_") {
+                let board = db.get_board(&id).await?;
+                if fmt == models::OutputFormat::Pretty {
+                    let cards = db.list_cards(&id, None, None, &[], false).await?;
+                    let card_ids: Vec<String> = cards.iter().map(|c| c.id.clone()).collect();
+                    let comment_counts = db.get_comment_counts(&card_ids).await?;
+                    output::print_kanban(&board, &cards, &comment_counts);
+                } else {
+                    let summary = db.get_board_summary(&id).await?;
+                    output::print_board(&board, &summary, fmt);
+                }
+            } else if id.starts_with("card_") {
+                let card = db.get_card(&id).await?;
+                let comments = db.list_comments(&id).await?;
+                output::print_card(&card, &comments, fmt);
+            } else {
+                return Err(AgentBoardError::InvalidArgs(format!(
+                    "Unknown ID prefix: {}. Expected agent_, board_, or card_",
+                    id
+                )));
+            }
+        }
         Commands::Mine {
             board,
             status,
@@ -84,10 +111,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     .to_string();
                 output::print_agent_whoami(&agent, &cwd);
             }
-            AgentCommands::Get { agent_id, format } => {
-                let agent = db.get_agent(&agent_id).await?;
-                output::print_agent(&agent, format.unwrap_or(default_format));
-            }
             AgentCommands::List {
                 include_inactive,
                 format,
@@ -130,11 +153,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             }
         },
         Commands::Card { command } => match command {
-            CardCommands::Get { card_id, format } => {
-                let card = db.get_card(&card_id).await?;
-                let comments = db.list_comments(&card_id).await?;
-                output::print_card(&card, &comments, format.unwrap_or(default_format));
-            }
             CardCommands::List {
                 board_id,
                 status,
@@ -268,19 +286,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             }
         },
         Commands::Board { command } => match command {
-            BoardCommands::Get { board_id, format } => {
-                let board = db.get_board(&board_id).await?;
-                let fmt = format.unwrap_or(default_format);
-                if fmt == models::OutputFormat::Pretty {
-                    let cards = db.list_cards(&board_id, None, None, &[], false).await?;
-                    let card_ids: Vec<String> = cards.iter().map(|c| c.id.clone()).collect();
-                    let comment_counts = db.get_comment_counts(&card_ids).await?;
-                    output::print_kanban(&board, &cards, &comment_counts);
-                } else {
-                    let summary = db.get_board_summary(&board_id).await?;
-                    output::print_board(&board, &summary, fmt);
-                }
-            }
             BoardCommands::List {
                 include_deleted,
                 format,

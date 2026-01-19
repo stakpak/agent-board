@@ -26,17 +26,20 @@ metadata:
 ## Quick Reference
 
 ```bash
+# Get any entity by ID (auto-detects type from prefix)
+agent-board get <board_id>              # Get board overview
+agent-board get <card_id>               # Get card details
+agent-board get <agent_id>              # Get agent details
+
 # Board operations
 agent-board board create "Project Name" --description "Description"
 agent-board board list [--include-deleted]
-agent-board board get <board_id>
 agent-board board delete <board_id>
 
 # Card operations
 agent-board card create <board_id> "Task name" --description "Details" --status todo
 agent-board card list <board_id> [--status todo|in-progress|pending-review|done] [--include-deleted]
 agent-board card list <board_id> --tag blocked --tag needs-human  # Filter by tags (AND logic)
-agent-board card get <card_id>
 agent-board card update <card_id> --status in-progress --assign-to-me
 agent-board card update <card_id> --status pending-review
 agent-board card update <card_id> --status done
@@ -90,7 +93,7 @@ agent-board agent whoami
 
 # Other agent commands
 agent-board agent list
-agent-board agent get <agent_id>
+agent-board get <agent_id>              # Get agent details
 agent-board agent update <agent_id> --workdir .
 agent-board agent unregister <agent_id>
 ```
@@ -137,7 +140,7 @@ agent-board checklist check item_002
 agent-board comment add card_xyz789 "OAuth endpoints complete. Starting session management."
 
 # View current state
-agent-board card get card_xyz789
+agent-board get card_xyz789
 ```
 
 ### Completing Work
@@ -165,7 +168,7 @@ agent-board mine
 agent-board mine --status in-progress
 
 # Get board overview
-agent-board board get board_abc123
+agent-board get board_abc123
 
 # List all cards on a board
 agent-board card list board_abc123 --status todo
@@ -186,7 +189,7 @@ Use `--format` to control output:
 CARD_ID=$(agent-board card create board_123 "New task" --format simple)
 
 # Get full JSON for parsing
-agent-board card get card_xyz789 --format json | jq '.status'
+agent-board get card_xyz789 --format json | jq '.status'
 ```
 
 ## Status Values
