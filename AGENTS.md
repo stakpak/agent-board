@@ -26,8 +26,8 @@ src/
 
 ### cli.rs
 - `Cli` struct with global options (`--format`, `--quiet`, `--verbose`)
-- `Commands` enum: `Get`, `Mine`, `Agent`, `Card`, `Checklist`, `Comment`, `Board`
-- Subcommand enums: `AgentCommands`, `CardCommands`, `ChecklistCommands`, `CommentCommands`, `BoardCommands`
+- `Commands` enum: `Version`, `Get`, `List`, `Create`, `Update`, `Delete`, `Mine`, `Whoami`
+- Subcommand enums: `ListCommands`, `CreateCommands`, `UpdateCommands`, `DeleteCommands`
 - Uses clap derive macros
 
 ### models.rs
@@ -92,8 +92,8 @@ cargo build --release
 cargo clippy
 
 # Test manually
-./target/debug/agent-board board create "Test" --description "Test board"
-./target/debug/agent-board card create board_xxx "Task name"
+./target/debug/agent-board create board "Test" --description "Test board"
+./target/debug/agent-board create card board_xxx "Task name"
 ./target/debug/agent-board --help
 ```
 
@@ -111,33 +111,33 @@ Agents must register an identity before working on tasks. Identity is tracked vi
 ### Agent Commands
 ```bash
 # Register a new agent (auto-generated name)
-./target/debug/agent-board agent register --command stakpak
+./target/debug/agent-board create agent --command stakpak
 
 # Register with explicit name
-./target/debug/agent-board agent register --command claude --name code-reviewer --description "Reviews PRs"
+./target/debug/agent-board create agent --command claude --name code-reviewer --description "Reviews PRs"
 
 # Show current agent identity
 export AGENT_BOARD_AGENT_ID=agent_xxx
-./target/debug/agent-board agent whoami
+./target/debug/agent-board whoami
 
 # List all agents
-./target/debug/agent-board agent list
-./target/debug/agent-board agent list --include-inactive
+./target/debug/agent-board list agents
+./target/debug/agent-board list agents --include-inactive
 
 # Get agent details (uses top-level get command)
 ./target/debug/agent-board get <agent_id>
 
 # Update agent
-./target/debug/agent-board agent update <agent_id> --name new-name --workdir .
+./target/debug/agent-board update agent <agent_id> --name new-name --workdir .
 
 # Unregister (soft delete)
-./target/debug/agent-board agent unregister <agent_id>
+./target/debug/agent-board delete agent <agent_id>
 ```
 
 ### Agent Workflow
 ```bash
 # 1. Register once
-agent-board agent register --command stakpak
+agent-board create agent --command stakpak
 # Output: Created agent: agent_abc123 (Name: swift-falcon)
 #         To use this agent, run:
 #           export AGENT_BOARD_AGENT_ID=agent_abc123
@@ -146,7 +146,7 @@ agent-board agent register --command stakpak
 export AGENT_BOARD_AGENT_ID=agent_abc123
 
 # 3. Work on tasks
-agent-board card update card_xxx --status in-progress --assign-to-me
+agent-board update card card_xxx --status in-progress --assign-to-me
 agent-board mine
 ```
 
@@ -208,25 +208,25 @@ Boards, cards, and agents support soft delete - records are marked with `deleted
 ### Delete Commands
 ```bash
 # Delete a card (soft delete)
-./target/debug/agent-board card delete <card_id>
+./target/debug/agent-board delete card <card_id>
 
 # Delete a board (soft delete, cascades to all cards in board)
-./target/debug/agent-board board delete <board_id>
+./target/debug/agent-board delete board <board_id>
 
 # Unregister an agent (soft delete)
-./target/debug/agent-board agent unregister <agent_id>
+./target/debug/agent-board delete agent <agent_id>
 ```
 
 ### Viewing Deleted/Inactive Items
 ```bash
 # List boards including deleted ones
-./target/debug/agent-board board list --include-deleted
+./target/debug/agent-board list boards --include-deleted
 
 # List cards including deleted ones (works even on deleted boards)
-./target/debug/agent-board card list <board_id> --include-deleted
+./target/debug/agent-board list cards <board_id> --include-deleted
 
 # List agents including inactive ones
-./target/debug/agent-board agent list --include-inactive
+./target/debug/agent-board list agents --include-inactive
 ```
 
 Deleted items display with `[DELETED]` suffix, inactive agents show `[INACTIVE]`.
@@ -274,11 +274,13 @@ Example output:
 ## Future Improvements
 
 - [ ] Add `--filter` for more flexible queries
-- [x] Add `card delete` command
-- [x] Add `board delete` command
+- [x] Add `delete card` command
+- [x] Add `delete board` command
 - [x] Add `--format pretty` for visual kanban board
 - [x] Add agent identity system
 - [x] Add top-level `get` command (auto-detects entity type from ID prefix)
-- [ ] Add `card restore` / `board restore` / `agent reactivate` commands
+- [x] Add `version` subcommand
+- [x] Simplify CLI to `<action> <entity>` pattern (get/list/create/update/delete)
+- [ ] Add restore commands for soft-deleted entities
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations

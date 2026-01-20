@@ -4,9 +4,7 @@ mod models;
 mod output;
 
 use clap::Parser;
-use cli::{
-    AgentCommands, BoardCommands, CardCommands, ChecklistCommands, Cli, Commands, CommentCommands,
-};
+use cli::{Cli, Commands, CreateCommands, DeleteCommands, ListCommands, UpdateCommands};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -27,12 +25,20 @@ fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<(), AgentBoardError> {
+    // Handle version command before loading DB
+    if matches!(cli.command, Commands::Version) {
+        println!("agent-board {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let db = db::Database::load(&cli).await?;
     let default_format = cli.format.clone();
     let quiet = cli.quiet;
     let agent_id_result = cli.get_agent_id();
 
     match cli.command {
+        Commands::Version => unreachable!(), // Handled above
+
         Commands::Get { id, format } => {
             let fmt = format.unwrap_or(default_format);
             if id.starts_with("agent_") {
@@ -60,6 +66,7 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 )));
             }
         }
+
         Commands::Mine {
             board,
             status,
@@ -71,8 +78,80 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 .await?;
             output::print_cards(&cards, format.unwrap_or(default_format));
         }
-        Commands::Agent { command } => match command {
-            AgentCommands::Register {
+
+        Commands::Whoami => {
+            let agent_id = agent_id_result?;
+            let agent = db.get_agent(&agent_id).await?;
+            let cwd = std::env::current_dir()
+                .map_err(|e| {
+                    AgentBoardError::General(format!("Failed to get current directory: {}", e))
+                })?
+                .to_string_lossy()
+                .to_string();
+            output::print_agent_whoami(&agent, &cwd);
+        }
+
+        // ====================================================================
+        // LIST commands
+        // ====================================================================
+        Commands::List { command } => match command {
+            ListCommands::Boards {
+                include_deleted,
+                format,
+            } => {
+                let boards = db.list_boards(include_deleted).await?;
+                output::print_boards(&boards, format.unwrap_or(default_format));
+            }
+            ListCommands::Cards {
+                board_id,
+                status,
+                assigned_to,
+                tag,
+                include_deleted,
+                format,
+            } => {
+                let cards = db
+                    .list_cards(
+                        &board_id,
+                        status,
+                        assigned_to.as_deref(),
+                        &tag,
+                        include_deleted,
+                    )
+                    .await?;
+                output::print_cards(&cards, format.unwrap_or(default_format));
+            }
+            ListCommands::Agents {
+                include_inactive,
+                format,
+            } => {
+                let agents = db.list_agents(include_inactive).await?;
+                output::print_agents(&agents, format.unwrap_or(default_format));
+            }
+        },
+
+        // ====================================================================
+        // CREATE commands
+        // ====================================================================
+        Commands::Create { command } => match command {
+            CreateCommands::Board { name, description } => {
+                let board = db.create_board(name, description).await?;
+                if !quiet {
+                    println!("Created board: {}", board.id);
+                }
+            }
+            CreateCommands::Card {
+                board_id,
+                name,
+                description,
+                status,
+            } => {
+                let card = db.create_card(&board_id, name, description, status).await?;
+                if !quiet {
+                    println!("Created card: {}", card.id);
+                }
+            }
+            CreateCommands::Agent {
                 command,
                 name,
                 description,
@@ -94,96 +173,43 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("  export AGENT_BOARD_AGENT_ID={}", agent.id);
                 }
             }
-            AgentCommands::Unregister { agent_id } => {
-                db.unregister_agent(&agent_id).await?;
+            CreateCommands::Checklist {
+                card_id,
+                name,
+                item,
+            } => {
+                let checklist = db.add_checklist(&card_id, name, item).await?;
                 if !quiet {
-                    println!("Unregistered agent: {}", agent_id);
+                    println!("Added checklist: {}", checklist.id);
                 }
             }
-            AgentCommands::Whoami => {
-                let agent_id = agent_id_result?;
-                let agent = db.get_agent(&agent_id).await?;
-                let cwd = std::env::current_dir()
-                    .map_err(|e| {
-                        AgentBoardError::General(format!("Failed to get current directory: {}", e))
+            CreateCommands::Comment {
+                card_id,
+                text,
+                file,
+            } => {
+                let content = if let Some(path) = file {
+                    std::fs::read_to_string(&path).map_err(|e| {
+                        AgentBoardError::General(format!("Failed to read file: {}", e))
                     })?
-                    .to_string_lossy()
-                    .to_string();
-                output::print_agent_whoami(&agent, &cwd);
-            }
-            AgentCommands::List {
-                include_inactive,
-                format,
-            } => {
-                let agents = db.list_agents(include_inactive).await?;
-                output::print_agents(&agents, format.unwrap_or(default_format));
-            }
-            AgentCommands::Update {
-                agent_id,
-                name,
-                command,
-                description,
-                workdir,
-            } => {
-                let working_directory = match workdir {
-                    Some(w) if w == "." => Some(
-                        std::env::current_dir()
-                            .map_err(|e| {
-                                AgentBoardError::General(format!(
-                                    "Failed to get current directory: {}",
-                                    e
-                                ))
-                            })?
-                            .to_string_lossy()
-                            .to_string(),
-                    ),
-                    Some(w) => Some(w),
-                    None => None,
+                } else {
+                    text.ok_or(AgentBoardError::InvalidArgs(
+                        "Either text or --file required".into(),
+                    ))?
                 };
-                let update = models::AgentUpdate {
-                    name,
-                    command,
-                    description,
-                    working_directory,
-                };
-                db.update_agent(&agent_id, update).await?;
+                let agent_id = std::env::var("AGENT_BOARD_AGENT_ID").ok();
+                let comment = db.add_comment(&card_id, content, agent_id).await?;
                 if !quiet {
-                    println!("Updated agent: {}", agent_id);
+                    println!("Added comment: {}", comment.id);
                 }
             }
         },
-        Commands::Card { command } => match command {
-            CardCommands::List {
-                board_id,
-                status,
-                assigned_to,
-                tag,
-                include_deleted,
-                format,
-            } => {
-                let cards = db
-                    .list_cards(
-                        &board_id,
-                        status,
-                        assigned_to.as_deref(),
-                        &tag,
-                        include_deleted,
-                    )
-                    .await?;
-                output::print_cards(&cards, format.unwrap_or(default_format));
-            }
-            CardCommands::Create {
-                board_id,
-                name,
-                description,
-                status,
-            } => {
-                let card = db.create_card(&board_id, name, description, status).await?;
-                if !quiet {
-                    println!("Created card: {}", card.id);
-                }
-            }
-            CardCommands::Update {
+
+        // ====================================================================
+        // UPDATE commands
+        // ====================================================================
+        Commands::Update { command } => match command {
+            UpdateCommands::Card {
                 card_id,
                 name,
                 description,
@@ -234,75 +260,77 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("Updated card: {}", card_id);
                 }
             }
-            CardCommands::Delete { card_id } => {
-                db.delete_card(&card_id).await?;
-                if !quiet {
-                    println!("Deleted card: {}", card_id);
-                }
-            }
-        },
-        Commands::Checklist { command } => match command {
-            ChecklistCommands::Add {
-                card_id,
+            UpdateCommands::Agent {
+                agent_id,
                 name,
-                item,
+                command,
+                description,
+                workdir,
             } => {
-                let checklist = db.add_checklist(&card_id, name, item).await?;
+                let working_directory = match workdir {
+                    Some(w) if w == "." => Some(
+                        std::env::current_dir()
+                            .map_err(|e| {
+                                AgentBoardError::General(format!(
+                                    "Failed to get current directory: {}",
+                                    e
+                                ))
+                            })?
+                            .to_string_lossy()
+                            .to_string(),
+                    ),
+                    Some(w) => Some(w),
+                    None => None,
+                };
+                let update = models::AgentUpdate {
+                    name,
+                    command,
+                    description,
+                    working_directory,
+                };
+                db.update_agent(&agent_id, update).await?;
                 if !quiet {
-                    println!("Added checklist: {}", checklist.id);
+                    println!("Updated agent: {}", agent_id);
                 }
             }
-            ChecklistCommands::Check { item_id, uncheck } => {
-                db.check_item(&item_id, !uncheck).await?;
+            UpdateCommands::ChecklistItem { item_id, check, uncheck } => {
+                // Require explicit --check or --uncheck flag
+                if !check && !uncheck {
+                    return Err(AgentBoardError::InvalidArgs(
+                        "Must specify --check or --uncheck".into(),
+                    ));
+                }
+                db.check_item(&item_id, check).await?;
                 if !quiet {
                     println!(
                         "{} item: {}",
-                        if uncheck { "Unchecked" } else { "Checked" },
+                        if check { "Checked" } else { "Unchecked" },
                         item_id
                     );
                 }
             }
         },
-        Commands::Comment { command } => match command {
-            CommentCommands::Add {
-                card_id,
-                text,
-                file,
-            } => {
-                let content = if let Some(path) = file {
-                    std::fs::read_to_string(&path).map_err(|e| {
-                        AgentBoardError::General(format!("Failed to read file: {}", e))
-                    })?
-                } else {
-                    text.ok_or(AgentBoardError::InvalidArgs(
-                        "Either text or --file required".into(),
-                    ))?
-                };
-                let agent_id = std::env::var("AGENT_BOARD_AGENT_ID").ok();
-                let comment = db.add_comment(&card_id, content, agent_id).await?;
-                if !quiet {
-                    println!("Added comment: {}", comment.id);
-                }
-            }
-        },
-        Commands::Board { command } => match command {
-            BoardCommands::List {
-                include_deleted,
-                format,
-            } => {
-                let boards = db.list_boards(include_deleted).await?;
-                output::print_boards(&boards, format.unwrap_or(default_format));
-            }
-            BoardCommands::Create { name, description } => {
-                let board = db.create_board(name, description).await?;
-                if !quiet {
-                    println!("Created board: {}", board.id);
-                }
-            }
-            BoardCommands::Delete { board_id } => {
+
+        // ====================================================================
+        // DELETE commands
+        // ====================================================================
+        Commands::Delete { command } => match command {
+            DeleteCommands::Board { board_id } => {
                 db.delete_board(&board_id).await?;
                 if !quiet {
                     println!("Deleted board: {}", board_id);
+                }
+            }
+            DeleteCommands::Card { card_id } => {
+                db.delete_card(&card_id).await?;
+                if !quiet {
+                    println!("Deleted card: {}", card_id);
+                }
+            }
+            DeleteCommands::Agent { agent_id } => {
+                db.unregister_agent(&agent_id).await?;
+                if !quiet {
+                    println!("Unregistered agent: {}", agent_id);
                 }
             }
         },
