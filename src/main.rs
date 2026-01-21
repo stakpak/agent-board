@@ -128,6 +128,10 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let agents = db.list_agents(include_inactive).await?;
                 output::print_agents(&agents, format.unwrap_or(default_format));
             }
+            ListCommands::Comments { card_id, format } => {
+                let comments = db.list_comments(&card_id).await?;
+                output::print_comments(&comments, format.unwrap_or(default_format));
+            }
         },
 
         // ====================================================================

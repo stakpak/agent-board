@@ -150,6 +150,16 @@ pub enum ListCommands {
         #[arg(long)]
         format: Option<OutputFormat>,
     },
+
+    /// List comments on a card
+    Comments {
+        /// Card ID
+        card_id: String,
+
+        /// Output format
+        #[arg(long)]
+        format: Option<OutputFormat>,
+    },
 }
 
 // ============================================================================

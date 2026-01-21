@@ -602,3 +602,35 @@ pub fn print_agent_whoami(agent: &Agent, current_dir: &str) {
         );
     }
 }
+
+pub fn print_comments(comments: &[Comment], format: OutputFormat) {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&comments).unwrap());
+        }
+        OutputFormat::Table => {
+            if comments.is_empty() {
+                println!("No comments found.");
+                return;
+            }
+            for comment in comments {
+                let author = comment.author.as_deref().unwrap_or("anonymous");
+                let time = comment.created_at.format("%Y-%m-%d %H:%M");
+                println!("─────────────────────────────────────────────────────────────");
+                println!("[{}] {} ({})", author, time, comment.id);
+                println!();
+                println!("{}", comment.text);
+                println!();
+            }
+        }
+        OutputFormat::Simple => {
+            for comment in comments {
+                println!("{}", comment.id);
+            }
+        }
+        OutputFormat::Pretty => {
+            // Pretty format doesn't apply to comments, fall back to table
+            print_comments(comments, OutputFormat::Table);
+        }
+    }
+}
