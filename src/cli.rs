@@ -160,6 +160,16 @@ pub enum ListCommands {
         #[arg(long)]
         format: Option<OutputFormat>,
     },
+
+    /// List checklists on a card
+    Checklists {
+        /// Card ID
+        card_id: String,
+
+        /// Output format
+        #[arg(long)]
+        format: Option<OutputFormat>,
+    },
 }
 
 // ============================================================================
@@ -278,6 +288,20 @@ pub enum UpdateCommands {
         remove_tag: Vec<String>,
     },
 
+    /// Update board details
+    Board {
+        /// Board ID
+        board_id: String,
+
+        /// Update board name
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Update description
+        #[arg(long)]
+        description: Option<String>,
+    },
+
     /// Update agent details
     Agent {
         /// Agent ID
@@ -337,5 +361,23 @@ pub enum DeleteCommands {
     Agent {
         /// Agent ID
         agent_id: String,
+    },
+
+    /// Delete a checklist from a card
+    Checklist {
+        /// Checklist ID
+        checklist_id: String,
+    },
+
+    /// Delete a comment from a card
+    Comment {
+        /// Comment ID
+        comment_id: String,
+    },
+
+    /// Delete a checklist item
+    ChecklistItem {
+        /// Item ID
+        item_id: String,
     },
 }

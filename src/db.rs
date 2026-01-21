@@ -348,6 +348,38 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_board(
+        &self,
+        board_id: &str,
+        name: Option<String>,
+        description: Option<String>,
+    ) -> Result<(), AgentBoardError> {
+        // Verify board exists
+        self.get_board(board_id).await?;
+
+        let now = Utc::now().to_rfc3339();
+
+        if let Some(n) = name {
+            self.conn
+                .execute(
+                    "UPDATE boards SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&n, &now, board_id],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        if let Some(d) = description {
+            self.conn
+                .execute(
+                    "UPDATE boards SET description = ?1, updated_at = ?2 WHERE id = ?3",
+                    [&d, &now, board_id],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
+        }
+        Ok(())
+    }
+
     pub async fn create_board(
         &self,
         name: String,
@@ -865,6 +897,159 @@ impl Database {
         })
     }
 
+    pub async fn list_checklists(&self, card_id: &str) -> Result<Vec<Checklist>, AgentBoardError> {
+        // Verify card exists
+        self.get_card(card_id).await?;
+
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT id, name FROM checklists WHERE card_id = ?1",
+                [card_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let mut checklists = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
+            let checklist_id: String = row.get(0).unwrap_or_default();
+            let name: String = row.get(1).unwrap_or_default();
+
+            // Get items for this checklist
+            let mut item_rows = self
+                .conn
+                .query(
+                    "SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1",
+                    [checklist_id.as_str()],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Query items failed: {}", e)))?;
+
+            let mut items = Vec::new();
+            while let Some(item_row) = item_rows
+                .next()
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+            {
+                items.push(ChecklistItem {
+                    id: item_row.get(0).unwrap_or_default(),
+                    text: item_row.get(1).unwrap_or_default(),
+                    checked: item_row.get::<i64>(2).unwrap_or(0) != 0,
+                });
+            }
+
+            checklists.push(Checklist {
+                id: checklist_id,
+                name,
+                items,
+            });
+        }
+        Ok(checklists)
+    }
+
+    pub async fn delete_checklist(&self, checklist_id: &str) -> Result<(), AgentBoardError> {
+        // Verify checklist exists and get card_id for timestamp update
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT card_id FROM checklists WHERE id = ?1",
+                [checklist_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let card_id = if let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
+            row.get::<String>(0).unwrap_or_default()
+        } else {
+            return Err(AgentBoardError::NotFound(format!(
+                "Checklist not found: {}",
+                checklist_id
+            )));
+        };
+
+        // Delete items first (foreign key)
+        self.conn
+            .execute(
+                "DELETE FROM checklist_items WHERE checklist_id = ?1",
+                [checklist_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete items failed: {}", e)))?;
+
+        // Delete checklist
+        self.conn
+            .execute("DELETE FROM checklists WHERE id = ?1", [checklist_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete checklist failed: {}", e)))?;
+
+        // Update card timestamp
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE cards SET updated_at = ?1 WHERE id = ?2",
+                [now.as_str(), card_id.as_str()],
+            )
+            .await
+            .map_err(|e| {
+                AgentBoardError::General(format!("Update card timestamp failed: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    pub async fn delete_checklist_item(&self, item_id: &str) -> Result<(), AgentBoardError> {
+        // Get card_id for timestamp update
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT c.card_id FROM checklists c JOIN checklist_items i ON c.id = i.checklist_id WHERE i.id = ?1",
+                [item_id],
+            )
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
+
+        let card_id = if let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
+        {
+            row.get::<String>(0).unwrap_or_default()
+        } else {
+            return Err(AgentBoardError::NotFound(format!(
+                "Checklist item not found: {}",
+                item_id
+            )));
+        };
+
+        // Delete item
+        self.conn
+            .execute("DELETE FROM checklist_items WHERE id = ?1", [item_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete item failed: {}", e)))?;
+
+        // Update card timestamp
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE cards SET updated_at = ?1 WHERE id = ?2",
+                [now.as_str(), card_id.as_str()],
+            )
+            .await
+            .map_err(|e| {
+                AgentBoardError::General(format!("Update card timestamp failed: {}", e))
+            })?;
+
+        Ok(())
+    }
+
     pub async fn check_item(&self, item_id: &str, checked: bool) -> Result<(), AgentBoardError> {
         let checked_val = if checked { 1 } else { 0 };
 
@@ -954,6 +1139,23 @@ impl Database {
             });
         }
         Ok(comments)
+    }
+
+    pub async fn delete_comment(&self, comment_id: &str) -> Result<(), AgentBoardError> {
+        let result = self
+            .conn
+            .execute("DELETE FROM comments WHERE id = ?1", [comment_id])
+            .await
+            .map_err(|e| AgentBoardError::General(format!("Delete comment failed: {}", e)))?;
+
+        if result == 0 {
+            return Err(AgentBoardError::NotFound(format!(
+                "Comment not found: {}",
+                comment_id
+            )));
+        }
+
+        Ok(())
     }
 
     /// Get comment counts for multiple cards at once

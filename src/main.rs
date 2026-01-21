@@ -132,6 +132,10 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let comments = db.list_comments(&card_id).await?;
                 output::print_comments(&comments, format.unwrap_or(default_format));
             }
+            ListCommands::Checklists { card_id, format } => {
+                let checklists = db.list_checklists(&card_id).await?;
+                output::print_checklists(&checklists, format.unwrap_or(default_format));
+            }
         },
 
         // ====================================================================
@@ -264,6 +268,16 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("Updated card: {}", card_id);
                 }
             }
+            UpdateCommands::Board {
+                board_id,
+                name,
+                description,
+            } => {
+                db.update_board(&board_id, name, description).await?;
+                if !quiet {
+                    println!("Updated board: {}", board_id);
+                }
+            }
             UpdateCommands::Agent {
                 agent_id,
                 name,
@@ -297,7 +311,11 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("Updated agent: {}", agent_id);
                 }
             }
-            UpdateCommands::ChecklistItem { item_id, check, uncheck } => {
+            UpdateCommands::ChecklistItem {
+                item_id,
+                check,
+                uncheck,
+            } => {
                 // Require explicit --check or --uncheck flag
                 if !check && !uncheck {
                     return Err(AgentBoardError::InvalidArgs(
@@ -334,7 +352,25 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
             DeleteCommands::Agent { agent_id } => {
                 db.unregister_agent(&agent_id).await?;
                 if !quiet {
-                    println!("Unregistered agent: {}", agent_id);
+                    println!("Deleted agent: {}", agent_id);
+                }
+            }
+            DeleteCommands::Checklist { checklist_id } => {
+                db.delete_checklist(&checklist_id).await?;
+                if !quiet {
+                    println!("Deleted checklist: {}", checklist_id);
+                }
+            }
+            DeleteCommands::Comment { comment_id } => {
+                db.delete_comment(&comment_id).await?;
+                if !quiet {
+                    println!("Deleted comment: {}", comment_id);
+                }
+            }
+            DeleteCommands::ChecklistItem { item_id } => {
+                db.delete_checklist_item(&item_id).await?;
+                if !quiet {
+                    println!("Deleted checklist item: {}", item_id);
                 }
             }
         },
