@@ -207,13 +207,12 @@ pub enum CreateCommands {
 
     /// Register a new agent identity
     Agent {
-        /// Command to invoke this agent (e.g., stakpak, claude, aider)
-        #[arg(long)]
-        command: String,
-
         /// Agent name (auto-generated if not provided)
-        #[arg(long)]
         name: Option<String>,
+
+        /// Command to invoke this agent (e.g., stakpak, claude, aider)
+        #[arg(long, default_value = "stakpak")]
+        command: String,
 
         /// Agent description
         #[arg(long)]
