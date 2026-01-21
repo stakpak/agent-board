@@ -231,25 +231,64 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     (Some(s), _) if s == "null" => Some(None), // explicit unassign
                     (Some(s), _) => Some(Some(s.clone())),     // explicit assign
                     (None, true) => {
-                        // --assign-to-me flag: use current agent ID
-                        Some(Some(std::env::var("AGENT_BOARD_AGENT_ID").map_err(
-                            |_| {
-                                AgentBoardError::InvalidArgs(
-                                    "AGENT_BOARD_AGENT_ID environment variable not set".into(),
-                                )
-                            },
-                        )?))
+                        // --assign-to-me flag: use current agent ID or auto-create
+                        let id = match std::env::var("AGENT_BOARD_AGENT_ID") {
+                            Ok(id) => id,
+                            Err(_) => {
+                                // Auto-create agent identity
+                                let cwd = std::env::current_dir()
+                                    .map_err(|e| {
+                                        AgentBoardError::General(format!(
+                                            "Failed to get current directory: {}",
+                                            e
+                                        ))
+                                    })?
+                                    .to_string_lossy()
+                                    .to_string();
+                                let agent = db
+                                    .register_agent(None, "stakpak".to_string(), cwd, None)
+                                    .await?;
+                                eprintln!(
+                                    "Note: Created agent identity {} for this session.",
+                                    agent.id
+                                );
+                                eprintln!("      To persist: export AGENT_BOARD_AGENT_ID={}", agent.id);
+                                agent.id
+                            }
+                        };
+                        Some(Some(id))
                     }
                     (None, false) => {
                         // Use env var agent ID if status is being changed to in_progress
                         if status == Some(models::Status::InProgress) {
-                            Some(Some(std::env::var("AGENT_BOARD_AGENT_ID").map_err(
-                                |_| {
-                                    AgentBoardError::InvalidArgs(
-                                        "AGENT_BOARD_AGENT_ID environment variable not set".into(),
-                                    )
-                                },
-                            )?))
+                            let id = match std::env::var("AGENT_BOARD_AGENT_ID") {
+                                Ok(id) => id,
+                                Err(_) => {
+                                    // Auto-create agent identity
+                                    let cwd = std::env::current_dir()
+                                        .map_err(|e| {
+                                            AgentBoardError::General(format!(
+                                                "Failed to get current directory: {}",
+                                                e
+                                            ))
+                                        })?
+                                        .to_string_lossy()
+                                        .to_string();
+                                    let agent = db
+                                        .register_agent(None, "stakpak".to_string(), cwd, None)
+                                        .await?;
+                                    eprintln!(
+                                        "Note: Created agent identity {} for this session.",
+                                        agent.id
+                                    );
+                                    eprintln!(
+                                        "      To persist: export AGENT_BOARD_AGENT_ID={}",
+                                        agent.id
+                                    );
+                                    agent.id
+                                }
+                            };
+                            Some(Some(id))
                         } else {
                             None // no change to assignment
                         }

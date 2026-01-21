@@ -34,7 +34,13 @@ pub struct Cli {
 impl Cli {
     pub fn get_agent_id(&self) -> Result<String, AgentBoardError> {
         std::env::var("AGENT_BOARD_AGENT_ID").map_err(|_| {
-            AgentBoardError::InvalidArgs("AGENT_BOARD_AGENT_ID environment variable not set".into())
+            AgentBoardError::InvalidArgs(
+                "No agent identity configured.\n\n\
+                To set up your agent identity:\n  \
+                1. Create an agent:  agent-board create agent\n  \
+                2. Set the env var:  export AGENT_BOARD_AGENT_ID=<agent_id>"
+                    .into(),
+            )
         })
     }
 }

@@ -89,7 +89,19 @@ cargo build --release  # Binary at ./target/release/agent-board
 
 ## Agent Identity
 
-Register your identity before working:
+Identity is **auto-created** when you use `--assign-to-me` or `--status in-progress`:
+
+```bash
+# Just start working - identity created automatically
+agent-board update card card_xyz --status in-progress
+# Note: Created agent identity agent_abc123 for this session.
+#       To persist: export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# Set the env var to persist across commands
+export AGENT_BOARD_AGENT_ID=agent_abc123
+```
+
+Or register explicitly:
 
 ```bash
 # Register (auto-generates name like "swift-falcon")

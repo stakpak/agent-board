@@ -100,7 +100,31 @@ cargo clippy
 
 ## Agent Identity System
 
-Agents must register an identity before working on tasks. Identity is tracked via the `AGENT_BOARD_AGENT_ID` environment variable.
+Agent identity is tracked via the `AGENT_BOARD_AGENT_ID` environment variable. Identity is **auto-created** when needed, or can be registered explicitly.
+
+### Auto-Creation (Recommended)
+
+When using `--assign-to-me` or `--status in-progress` without an agent ID set, one is automatically created:
+
+```bash
+# Just start working - agent identity created automatically
+agent-board update card card_xxx --status in-progress
+# Note: Created agent identity agent_abc123 for this session.
+#       To persist: export AGENT_BOARD_AGENT_ID=agent_abc123
+```
+
+### Explicit Registration
+
+```bash
+# Register a new agent (auto-generated name)
+./target/debug/agent-board create agent
+
+# Register with explicit name
+./target/debug/agent-board create agent code-reviewer --command claude --description "Reviews PRs"
+
+# Set identity for session
+export AGENT_BOARD_AGENT_ID=agent_abc123
+```
 
 ### Agent Model
 - **id**: Unique identifier (e.g., `agent_abc123def456`)
@@ -111,12 +135,6 @@ Agents must register an identity before working on tasks. Identity is tracked vi
 
 ### Agent Commands
 ```bash
-# Register a new agent (auto-generated name)
-./target/debug/agent-board create agent
-
-# Register with explicit name
-./target/debug/agent-board create agent code-reviewer --command claude --description "Reviews PRs"
-
 # Show current agent identity
 export AGENT_BOARD_AGENT_ID=agent_xxx
 ./target/debug/agent-board whoami
@@ -133,22 +151,6 @@ export AGENT_BOARD_AGENT_ID=agent_xxx
 
 # Delete agent (soft delete)
 ./target/debug/agent-board delete agent <agent_id>
-```
-
-### Agent Workflow
-```bash
-# 1. Register once (name optional, auto-generated if omitted)
-agent-board create agent
-# Output: Created agent: agent_abc123 (Name: swift-falcon)
-#         To use this agent, run:
-#           export AGENT_BOARD_AGENT_ID=agent_abc123
-
-# 2. Set env var
-export AGENT_BOARD_AGENT_ID=agent_abc123
-
-# 3. Work on tasks
-agent-board update card card_xxx --status in-progress --assign-to-me
-agent-board mine
 ```
 
 ### Working Directory Warning
