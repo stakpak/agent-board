@@ -57,7 +57,8 @@ src/
 
 ### output.rs
 - `print_agents()`, `print_agent()`, `print_agent_whoami()` for agent output
-- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`, `print_comments()`
+- `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`
+- `print_comments()`, `print_checklists()` for listing comments/checklists
 - Uses `tabled` crate for table output
 - JSON output via `serde_json::to_string_pretty`
 - Simple output: just IDs, one per line
@@ -111,10 +112,10 @@ Agents must register an identity before working on tasks. Identity is tracked vi
 ### Agent Commands
 ```bash
 # Register a new agent (auto-generated name)
-./target/debug/agent-board create agent --command stakpak
+./target/debug/agent-board create agent
 
 # Register with explicit name
-./target/debug/agent-board create agent --command claude --name code-reviewer --description "Reviews PRs"
+./target/debug/agent-board create agent code-reviewer --command claude --description "Reviews PRs"
 
 # Show current agent identity
 export AGENT_BOARD_AGENT_ID=agent_xxx
@@ -130,14 +131,14 @@ export AGENT_BOARD_AGENT_ID=agent_xxx
 # Update agent
 ./target/debug/agent-board update agent <agent_id> --name new-name --workdir .
 
-# Unregister (soft delete)
+# Delete agent (soft delete)
 ./target/debug/agent-board delete agent <agent_id>
 ```
 
 ### Agent Workflow
 ```bash
-# 1. Register once
-agent-board create agent --command stakpak
+# 1. Register once (name optional, auto-generated if omitted)
+agent-board create agent
 # Output: Created agent: agent_abc123 (Name: swift-falcon)
 #         To use this agent, run:
 #           export AGENT_BOARD_AGENT_ID=agent_abc123
@@ -213,8 +214,17 @@ Boards, cards, and agents support soft delete - records are marked with `deleted
 # Delete a board (soft delete, cascades to all cards in board)
 ./target/debug/agent-board delete board <board_id>
 
-# Unregister an agent (soft delete)
+# Delete an agent (soft delete)
 ./target/debug/agent-board delete agent <agent_id>
+
+# Delete a checklist (hard delete)
+./target/debug/agent-board delete checklist <checklist_id>
+
+# Delete a comment (hard delete)
+./target/debug/agent-board delete comment <comment_id>
+
+# Delete a checklist item (hard delete)
+./target/debug/agent-board delete checklist-item <item_id>
 ```
 
 ### Viewing Deleted/Inactive Items
@@ -271,6 +281,44 @@ Example output:
 └────────────────────────────┴────────────────────────────┴────────────────────────────┴────────────────────────────┘
 ```
 
+## CLI Command Reference
+
+### List Commands
+```bash
+list boards [--include-deleted]
+list cards <board_id> [--status STATUS] [--assigned-to ID] [--tag TAG] [--include-deleted]
+list agents [--include-inactive]
+list comments <card_id>
+list checklists <card_id>
+```
+
+### Create Commands
+```bash
+create board <name> [--description DESC]
+create card <board_id> <name> [--description DESC] [--status STATUS]
+create agent [name] [--command CMD] [--description DESC]
+create checklist <card_id> --item "text" [--item "text"...] [--name NAME]
+create comment <card_id> <text> | --file PATH
+```
+
+### Update Commands
+```bash
+update board <board_id> [--name NAME] [--description DESC]
+update card <card_id> [--name NAME] [--description DESC] [--status STATUS] [--assign ID|--assign-to-me] [--add-tag TAG] [--remove-tag TAG]
+update agent <agent_id> [--name NAME] [--command CMD] [--description DESC] [--workdir PATH]
+update checklist-item <item_id> --check|--uncheck
+```
+
+### Delete Commands
+```bash
+delete board <board_id>           # soft delete
+delete card <card_id>             # soft delete
+delete agent <agent_id>           # soft delete
+delete checklist <checklist_id>   # hard delete
+delete comment <comment_id>       # hard delete
+delete checklist-item <item_id>   # hard delete
+```
+
 ## Future Improvements
 
 - [ ] Add `--filter` for more flexible queries
@@ -281,6 +329,9 @@ Example output:
 - [x] Add top-level `get` command (auto-detects entity type from ID prefix)
 - [x] Add `version` subcommand
 - [x] Simplify CLI to `<action> <entity>` pattern (get/list/create/update/delete)
+- [x] Add `list comments` and `list checklists` commands
+- [x] Add `update board` command
+- [x] Add `delete checklist`, `delete comment`, `delete checklist-item` commands
 - [ ] Add restore commands for soft-deleted entities
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations

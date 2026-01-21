@@ -85,7 +85,7 @@ cargo build --release
 
 | Variable | Description |
 |----------|-------------|
-| `AGENT_BOARD_SESSION_ID` | Your session ID for `mine` and `--assign-to-me` |
+| `AGENT_BOARD_AGENT_ID` | Your agent ID for `mine`, `whoami`, and `--assign-to-me` |
 | `AGENT_BOARD_DB_PATH` | Override default database location |
 
 ## Data Location
@@ -95,27 +95,40 @@ cargo build --release
 ## Commands
 
 ```bash
-# Board commands
-agent-board board list                    # List all boards
-agent-board board get <board_id>          # Get board overview and card summary
-agent-board board create "Name"           # Create a new board
+# Get any entity by ID (auto-detects type)
+agent-board get <board_id|card_id|agent_id>
 
-# Card commands
-agent-board mine                          # Get all cards assigned to you
-agent-board card list <board_id>          # List cards on a board
-agent-board card list <board_id> --tag blocked  # Filter by tag
-agent-board card list <board_id> --tag blocked --tag needs-human  # Multiple tags (AND)
-agent-board card get <card_id>            # Get full card details
-agent-board card create <board_id> "Name" # Create a new card
-agent-board card update <card_id> ...     # Update card fields (name, status, tags, assignee)
+# List commands
+agent-board list boards
+agent-board list cards <board_id> [--status todo|in-progress|pending-review|done] [--tag TAG]
+agent-board list agents
+agent-board list comments <card_id>
+agent-board list checklists <card_id>
 
-# Checklist commands
-agent-board checklist add <card_id> --item "Task 1" --item "Task 2"  # Add checklist items
-agent-board checklist check <item_id>     # Mark item as done
-agent-board checklist check <item_id> --uncheck  # Mark item as not done
+# Create commands
+agent-board create board "Name" [--description "..."]
+agent-board create card <board_id> "Name" [--description "..."]
+agent-board create agent [name] [--command stakpak] [--description "..."]
+agent-board create checklist <card_id> --item "Task 1" --item "Task 2"
+agent-board create comment <card_id> "text"
 
-# Comment commands
-agent-board comment add <card_id> "text"  # Add a comment to a card
+# Update commands
+agent-board update board <board_id> [--name "..."] [--description "..."]
+agent-board update card <card_id> [--status in-progress] [--assign-to-me] [--add-tag TAG]
+agent-board update agent <agent_id> [--name "..."] [--workdir .]
+agent-board update checklist-item <item_id> --check|--uncheck
+
+# Delete commands (soft delete for boards/cards/agents)
+agent-board delete board <board_id>
+agent-board delete card <card_id>
+agent-board delete agent <agent_id>
+agent-board delete checklist <checklist_id>
+agent-board delete comment <comment_id>
+agent-board delete checklist-item <item_id>
+
+# Agent identity
+agent-board whoami                        # Show current agent
+agent-board mine [--status STATUS]        # Get your assigned cards
 ```
 
 ## Human Review Workflow

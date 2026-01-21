@@ -40,27 +40,31 @@ agent-board list boards [--include-deleted]
 agent-board list cards <board_id> [--status todo|in-progress|pending-review|done] [--include-deleted]
 agent-board list cards <board_id> --tag blocked --tag needs-human  # Filter by tags (AND logic)
 agent-board list agents [--include-inactive]
+agent-board list comments <card_id>
+agent-board list checklists <card_id>
 
 # Create operations
 agent-board create board "Project Name" --description "Description"
 agent-board create card <board_id> "Task name" --description "Details" --status todo
-agent-board create agent --command stakpak [--name my-agent] [--description "Agent purpose"]
+agent-board create agent [name] [--command stakpak] [--description "Agent purpose"]
 agent-board create checklist <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
 agent-board create comment <card_id> "Progress update or notes"
 
 # Update operations
+agent-board update board <board_id> --name "New name" --description "New desc"
 agent-board update card <card_id> --status in-progress --assign-to-me
-agent-board update card <card_id> --status pending-review
-agent-board update card <card_id> --status done
 agent-board update card <card_id> --add-tag urgent --remove-tag blocked
 agent-board update agent <agent_id> --name new-name --workdir .
 agent-board update checklist-item <item_id> --check    # Mark complete
 agent-board update checklist-item <item_id> --uncheck  # Mark incomplete
 
-# Delete operations (soft delete)
+# Delete operations (soft delete for boards/cards/agents, hard delete for others)
 agent-board delete board <board_id>
 agent-board delete card <card_id>
 agent-board delete agent <agent_id>
+agent-board delete checklist <checklist_id>
+agent-board delete comment <comment_id>
+agent-board delete checklist-item <item_id>
 
 # Agent identity
 agent-board whoami                      # Show current agent identity
@@ -89,25 +93,19 @@ Register your identity before working:
 
 ```bash
 # Register (auto-generates name like "swift-falcon")
-agent-board create agent --command stakpak
+agent-board create agent
 # Created agent: agent_abc123 (Name: swift-falcon)
 # To use this agent, run:
 #   export AGENT_BOARD_AGENT_ID=agent_abc123
 
 # Or with explicit name
-agent-board create agent --command claude --name code-reviewer
+agent-board create agent code-reviewer --command claude
 
 # Set identity for session
 export AGENT_BOARD_AGENT_ID=agent_abc123
 
 # Verify identity (warns if wrong directory)
 agent-board whoami
-
-# Other agent commands
-agent-board list agents
-agent-board get <agent_id>              # Get agent details
-agent-board update agent <agent_id> --workdir .
-agent-board delete agent <agent_id>
 ```
 
 Data stored in `~/.agent-board/data.db`. Override: `export AGENT_BOARD_DB_PATH=/path/data.db`
@@ -280,7 +278,7 @@ agent-board create comment card_123 "Ready for review: verify terraform plan"
 
 ## Best Practices for Agents
 
-1. **Register identity first** with `agent-board create agent --command <your-cli>`
+1. **Register identity first** with `agent-board create agent [name]`
 2. **Set `AGENT_BOARD_AGENT_ID`** before starting work
 3. **Use `--assign-to-me`** when claiming a card to start work
 4. **Think Kanban** - Cards represent discrete, deliverable work items that flow through the board
