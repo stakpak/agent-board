@@ -166,16 +166,6 @@ pub enum ListCommands {
         #[arg(long)]
         format: Option<OutputFormat>,
     },
-
-    /// List checklists on a card
-    Checklists {
-        /// Card ID
-        card_id: String,
-
-        /// Output format
-        #[arg(long)]
-        format: Option<OutputFormat>,
-    },
 }
 
 // ============================================================================
@@ -225,14 +215,10 @@ pub enum CreateCommands {
         description: Option<String>,
     },
 
-    /// Add a checklist to a card
+    /// Add checklist items to a card
     Checklist {
         /// Card ID
         card_id: String,
-
-        /// Name for the checklist
-        #[arg(long, default_value = "Tasks")]
-        name: String,
 
         /// Checklist item text (repeatable)
         #[arg(long, required = true)]
@@ -366,12 +352,6 @@ pub enum DeleteCommands {
     Agent {
         /// Agent ID
         agent_id: String,
-    },
-
-    /// Delete a checklist from a card
-    Checklist {
-        /// Checklist ID
-        checklist_id: String,
     },
 
     /// Delete a comment from a card

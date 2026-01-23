@@ -132,10 +132,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 let comments = db.list_comments(&card_id).await?;
                 output::print_comments(&comments, format.unwrap_or(default_format));
             }
-            ListCommands::Checklists { card_id, format } => {
-                let checklists = db.list_checklists(&card_id).await?;
-                output::print_checklists(&checklists, format.unwrap_or(default_format));
-            }
         },
 
         // ====================================================================
@@ -181,14 +177,10 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     println!("  export AGENT_BOARD_AGENT_ID={}", agent.id);
                 }
             }
-            CreateCommands::Checklist {
-                card_id,
-                name,
-                item,
-            } => {
-                let checklist = db.add_checklist(&card_id, name, item).await?;
+            CreateCommands::Checklist { card_id, item } => {
+                let items = db.add_checklist_items(&card_id, item).await?;
                 if !quiet {
-                    println!("Added checklist: {}", checklist.id);
+                    println!("Added {} checklist item(s)", items.len());
                 }
             }
             CreateCommands::Comment {
@@ -392,12 +384,6 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 db.unregister_agent(&agent_id).await?;
                 if !quiet {
                     println!("Deleted agent: {}", agent_id);
-                }
-            }
-            DeleteCommands::Checklist { checklist_id } => {
-                db.delete_checklist(&checklist_id).await?;
-                if !quiet {
-                    println!("Deleted checklist: {}", checklist_id);
                 }
             }
             DeleteCommands::Comment { comment_id } => {

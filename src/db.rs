@@ -493,8 +493,8 @@ impl Database {
             tags.push(tag_row.get::<String>(0).unwrap_or_default());
         }
 
-        // Load checklists
-        let checklists = self.load_checklists_for_card(&id).await?;
+        // Load checklist items
+        let checklist = self.load_checklist_for_card(&id).await?;
 
         Ok(Card {
             id,
@@ -504,65 +504,40 @@ impl Database {
             status,
             assigned_to,
             tags,
-            checklists,
+            checklist,
             created_at,
             updated_at,
             deleted_at,
         })
     }
 
-    async fn load_checklists_for_card(
+    /// Load checklist items directly for a card (simplified model - one checklist per card)
+    async fn load_checklist_for_card(
         &self,
         card_id: &str,
-    ) -> Result<Vec<Checklist>, AgentBoardError> {
-        let mut checklist_rows = self
+    ) -> Result<Vec<ChecklistItem>, AgentBoardError> {
+        let mut item_rows = self
             .conn
             .query(
-                "SELECT id, name FROM checklists WHERE card_id = ?1",
+                "SELECT id, text, checked FROM checklist_items WHERE card_id = ?1",
                 [card_id],
             )
             .await
             .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
 
-        let mut checklists = Vec::new();
-        while let Some(cl_row) = checklist_rows
+        let mut items = Vec::new();
+        while let Some(item_row) = item_rows
             .next()
             .await
             .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
         {
-            let cl_id: String = cl_row.get(0).unwrap_or_default();
-            let cl_name: String = cl_row.get(1).unwrap_or_default();
-
-            // Load items for this checklist
-            let mut item_rows = self
-                .conn
-                .query(
-                    "SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1",
-                    [cl_id.as_str()],
-                )
-                .await
-                .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
-
-            let mut items = Vec::new();
-            while let Some(item_row) = item_rows
-                .next()
-                .await
-                .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
-            {
-                items.push(ChecklistItem {
-                    id: item_row.get::<String>(0).unwrap_or_default(),
-                    text: item_row.get::<String>(1).unwrap_or_default(),
-                    checked: item_row.get::<i64>(2).unwrap_or(0) != 0,
-                });
-            }
-
-            checklists.push(Checklist {
-                id: cl_id,
-                name: cl_name,
-                items,
+            items.push(ChecklistItem {
+                id: item_row.get::<String>(0).unwrap_or_default(),
+                text: item_row.get::<String>(1).unwrap_or_default(),
+                checked: item_row.get::<i64>(2).unwrap_or(0) != 0,
             });
         }
-        Ok(checklists)
+        Ok(items)
     }
 
     pub async fn get_card(&self, card_id: &str) -> Result<Card, AgentBoardError> {
@@ -843,33 +818,22 @@ impl Database {
         Ok(())
     }
 
-    // Checklist operations
-    pub async fn add_checklist(
+    // Checklist operations (simplified - items added directly to card)
+    pub async fn add_checklist_items(
         &self,
         card_id: &str,
-        name: String,
         items: Vec<String>,
-    ) -> Result<Checklist, AgentBoardError> {
+    ) -> Result<Vec<ChecklistItem>, AgentBoardError> {
         // Verify card exists
         self.get_card(card_id).await?;
-
-        let checklist_id = Self::generate_id("checklist");
-
-        self.conn
-            .execute(
-                "INSERT INTO checklists (id, card_id, name) VALUES (?1, ?2, ?3)",
-                [&checklist_id, card_id, &name],
-            )
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Insert checklist failed: {}", e)))?;
 
         let mut checklist_items = Vec::new();
         for item_text in items {
             let item_id = Self::generate_id("item");
             self.conn
                 .execute(
-                    "INSERT INTO checklist_items (id, checklist_id, text, checked) VALUES (?1, ?2, ?3, 0)",
-                    libsql::params![item_id.as_str(), checklist_id.as_str(), item_text.as_str()],
+                    "INSERT INTO checklist_items (id, card_id, text, checked) VALUES (?1, ?2, ?3, 0)",
+                    libsql::params![item_id.as_str(), card_id, item_text.as_str()],
                 )
                 .await
                 .map_err(|e| AgentBoardError::General(format!("Insert item failed: {}", e)))?;
@@ -890,119 +854,7 @@ impl Database {
             .await
             .map_err(|e| AgentBoardError::General(format!("Update failed: {}", e)))?;
 
-        Ok(Checklist {
-            id: checklist_id,
-            name,
-            items: checklist_items,
-        })
-    }
-
-    pub async fn list_checklists(&self, card_id: &str) -> Result<Vec<Checklist>, AgentBoardError> {
-        // Verify card exists
-        self.get_card(card_id).await?;
-
-        let mut rows = self
-            .conn
-            .query(
-                "SELECT id, name FROM checklists WHERE card_id = ?1",
-                [card_id],
-            )
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
-
-        let mut checklists = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
-        {
-            let checklist_id: String = row.get(0).unwrap_or_default();
-            let name: String = row.get(1).unwrap_or_default();
-
-            // Get items for this checklist
-            let mut item_rows = self
-                .conn
-                .query(
-                    "SELECT id, text, checked FROM checklist_items WHERE checklist_id = ?1",
-                    [checklist_id.as_str()],
-                )
-                .await
-                .map_err(|e| AgentBoardError::General(format!("Query items failed: {}", e)))?;
-
-            let mut items = Vec::new();
-            while let Some(item_row) = item_rows
-                .next()
-                .await
-                .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
-            {
-                items.push(ChecklistItem {
-                    id: item_row.get(0).unwrap_or_default(),
-                    text: item_row.get(1).unwrap_or_default(),
-                    checked: item_row.get::<i64>(2).unwrap_or(0) != 0,
-                });
-            }
-
-            checklists.push(Checklist {
-                id: checklist_id,
-                name,
-                items,
-            });
-        }
-        Ok(checklists)
-    }
-
-    pub async fn delete_checklist(&self, checklist_id: &str) -> Result<(), AgentBoardError> {
-        // Verify checklist exists and get card_id for timestamp update
-        let mut rows = self
-            .conn
-            .query(
-                "SELECT card_id FROM checklists WHERE id = ?1",
-                [checklist_id],
-            )
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Query failed: {}", e)))?;
-
-        let card_id = if let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Row fetch failed: {}", e)))?
-        {
-            row.get::<String>(0).unwrap_or_default()
-        } else {
-            return Err(AgentBoardError::NotFound(format!(
-                "Checklist not found: {}",
-                checklist_id
-            )));
-        };
-
-        // Delete items first (foreign key)
-        self.conn
-            .execute(
-                "DELETE FROM checklist_items WHERE checklist_id = ?1",
-                [checklist_id],
-            )
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Delete items failed: {}", e)))?;
-
-        // Delete checklist
-        self.conn
-            .execute("DELETE FROM checklists WHERE id = ?1", [checklist_id])
-            .await
-            .map_err(|e| AgentBoardError::General(format!("Delete checklist failed: {}", e)))?;
-
-        // Update card timestamp
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE cards SET updated_at = ?1 WHERE id = ?2",
-                [now.as_str(), card_id.as_str()],
-            )
-            .await
-            .map_err(|e| {
-                AgentBoardError::General(format!("Update card timestamp failed: {}", e))
-            })?;
-
-        Ok(())
+        Ok(checklist_items)
     }
 
     pub async fn delete_checklist_item(&self, item_id: &str) -> Result<(), AgentBoardError> {
@@ -1010,7 +862,7 @@ impl Database {
         let mut rows = self
             .conn
             .query(
-                "SELECT c.card_id FROM checklists c JOIN checklist_items i ON c.id = i.checklist_id WHERE i.id = ?1",
+                "SELECT card_id FROM checklist_items WHERE id = ?1",
                 [item_id],
             )
             .await
@@ -1069,10 +921,10 @@ impl Database {
             )));
         }
 
-        // Update the card's updated_at via the checklist
+        // Update the card's updated_at directly (items now reference card_id)
         self.conn
             .execute(
-                "UPDATE cards SET updated_at = ?1 WHERE id = (SELECT card_id FROM checklists WHERE id = (SELECT checklist_id FROM checklist_items WHERE id = ?2))",
+                "UPDATE cards SET updated_at = ?1 WHERE id = (SELECT card_id FROM checklist_items WHERE id = ?2)",
                 [&Utc::now().to_rfc3339(), item_id],
             )
             .await

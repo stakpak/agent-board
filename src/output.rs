@@ -111,9 +111,9 @@ pub fn print_card(card: &Card, comments: &[Comment], format: OutputFormat) {
             if !card.tags.is_empty() {
                 println!("Tags: {}", card.tags.join(", "));
             }
-            for checklist in &card.checklists {
-                println!("\nChecklist: {} ({})", checklist.name, checklist.id);
-                for item in &checklist.items {
+            if !card.checklist.is_empty() {
+                println!("\nChecklist:");
+                for item in &card.checklist {
                     let check = if item.checked { "x" } else { " " };
                     println!("  [{}] {} ({})", check, item.text, item.id);
                 }
@@ -635,33 +635,4 @@ pub fn print_comments(comments: &[Comment], format: OutputFormat) {
     }
 }
 
-pub fn print_checklists(checklists: &[Checklist], format: OutputFormat) {
-    match format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&checklists).unwrap());
-        }
-        OutputFormat::Table => {
-            if checklists.is_empty() {
-                println!("No checklists found.");
-                return;
-            }
-            for checklist in checklists {
-                println!("Checklist: {} ({})", checklist.name, checklist.id);
-                for item in &checklist.items {
-                    let check = if item.checked { "x" } else { " " };
-                    println!("  [{}] {} ({})", check, item.text, item.id);
-                }
-                println!();
-            }
-        }
-        OutputFormat::Simple => {
-            for checklist in checklists {
-                println!("{}", checklist.id);
-            }
-        }
-        OutputFormat::Pretty => {
-            // Pretty format doesn't apply to checklists, fall back to table
-            print_checklists(checklists, OutputFormat::Table);
-        }
-    }
-}
+

@@ -10,7 +10,7 @@ A Rust CLI tool for task management with SQLite storage (via libsql). Built for 
 src/
 ├── main.rs      # Entry point, command dispatch, error handling
 ├── cli.rs       # Clap-based CLI definitions (Commands, subcommands, args)
-├── models.rs    # Data structures (Agent, Board, Card, Checklist, Comment, Status)
+├── models.rs    # Data structures (Agent, Board, Card, ChecklistItem, Comment, Status)
 ├── db.rs        # SQLite database operations (CRUD for all entities)
 ├── output.rs    # Output formatting (table, json, simple)
 └── schema.sql   # SQLite schema definitions
@@ -36,7 +36,8 @@ src/
 - `Status` enum: `Todo`, `InProgress`, `PendingReview`, `Done` (serde snake_case)
 - `OutputFormat` enum: `Json`, `Table`, `Simple`, `Pretty`
 - `CardUpdate` struct for update operations (avoids too-many-args clippy warning)
-- `Board`, `Card`, `Checklist`, `ChecklistItem`, `Comment` structs
+- `Board`, `Card`, `ChecklistItem`, `Comment` structs
+- `Card.checklist: Vec<ChecklistItem>` - single checklist per card (simplified model)
 - `Board` and `Card` have `deleted_at: Option<DateTime<Utc>>` for soft delete
 - `AgentBoardData` holds all entities for JSON serialization
 
@@ -44,21 +45,22 @@ src/
 - `Database` struct with `conn: Connection` (libsql)
 - `load()` opens SQLite at `~/.agent-board/data.db` or `AGENT_BOARD_DB_PATH`
 - Auto-initializes schema from `schema.sql`
-- Async CRUD methods for agents, boards, cards, checklists, comments
+- Async CRUD methods for agents, boards, cards, checklist items, comments
 - `generate_id(prefix)` creates IDs like `agent_abc123def456`, `card_abc123def456`
 - `generate_agent_name()` uses `names` crate for random adjective-noun names
 
 ### schema.sql
-- SQLite schema with tables: `agents`, `boards`, `cards`, `card_tags`, `checklists`, `checklist_items`, `comments`
+- SQLite schema with tables: `agents`, `boards`, `cards`, `card_tags`, `checklist_items`, `comments`
 - `agents` table: id, name (unique), command, working_directory, description, timestamps, deactivated_at
 - `boards` and `cards` tables have `deleted_at TEXT` column for soft delete
+- `checklist_items` table references `card_id` directly (simplified - one checklist per card)
 - Foreign keys with `ON DELETE CASCADE`
-- Indexes for common queries (board_id, status, assigned_to)
+- Indexes for common queries (board_id, status, assigned_to, card_id)
 
 ### output.rs
 - `print_agents()`, `print_agent()`, `print_agent_whoami()` for agent output
 - `print_cards()`, `print_card()`, `print_boards()`, `print_board()`, `print_kanban()`
-- `print_comments()`, `print_checklists()` for listing comments/checklists
+- `print_comments()`, `print_checklist_items()` for listing comments/checklist items
 - Uses `tabled` crate for table output
 - JSON output via `serde_json::to_string_pretty`
 - Simple output: just IDs, one per line
@@ -219,9 +221,6 @@ Boards, cards, and agents support soft delete - records are marked with `deleted
 # Delete an agent (soft delete)
 ./target/debug/agent-board delete agent <agent_id>
 
-# Delete a checklist (hard delete)
-./target/debug/agent-board delete checklist <checklist_id>
-
 # Delete a comment (hard delete)
 ./target/debug/agent-board delete comment <comment_id>
 
@@ -291,7 +290,6 @@ list boards [--include-deleted]
 list cards <board_id> [--status STATUS] [--assigned-to ID] [--tag TAG] [--include-deleted]
 list agents [--include-inactive]
 list comments <card_id>
-list checklists <card_id>
 ```
 
 ### Create Commands
@@ -299,7 +297,7 @@ list checklists <card_id>
 create board <name> [--description DESC]
 create card <board_id> <name> [--description DESC] [--status STATUS]
 create agent [name] [--command CMD] [--description DESC]
-create checklist <card_id> --item "text" [--item "text"...] [--name NAME]
+create checklist <card_id> --item "text" [--item "text"...]   # adds items to card's checklist
 create comment <card_id> <text> | --file PATH
 ```
 
@@ -316,7 +314,6 @@ update checklist-item <item_id> --check|--uncheck
 delete board <board_id>           # soft delete
 delete card <card_id>             # soft delete
 delete agent <agent_id>           # soft delete
-delete checklist <checklist_id>   # hard delete
 delete comment <comment_id>       # hard delete
 delete checklist-item <item_id>   # hard delete
 ```
@@ -331,9 +328,10 @@ delete checklist-item <item_id>   # hard delete
 - [x] Add top-level `get` command (auto-detects entity type from ID prefix)
 - [x] Add `version` subcommand
 - [x] Simplify CLI to `<action> <entity>` pattern (get/list/create/update/delete)
-- [x] Add `list comments` and `list checklists` commands
+- [x] Add `list comments` command
 - [x] Add `update board` command
-- [x] Add `delete checklist`, `delete comment`, `delete checklist-item` commands
+- [x] Add `delete comment`, `delete checklist-item` commands
+- [x] Simplify checklist model (single checklist per card, items shown when viewing card)
 - [ ] Add restore commands for soft-deleted entities
 - [ ] Add shell completions (`clap_complete`)
 - [ ] Add `--dry-run` for mutations

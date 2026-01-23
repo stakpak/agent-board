@@ -85,18 +85,12 @@ pub struct Card {
     pub status: Status,
     pub assigned_to: Option<String>,
     pub tags: Vec<String>,
-    pub checklists: Vec<Checklist>,
+    /// Single checklist per card (items stored directly)
+    pub checklist: Vec<ChecklistItem>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Checklist {
-    pub id: String,
-    pub name: String,
-    pub items: Vec<ChecklistItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

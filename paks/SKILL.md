@@ -18,7 +18,7 @@ tags:
   - rust
 metadata:
   author: Stakpak
-  version: "0.1.8"
+  version: "0.1.10"
 ---
 
 # Agent-Board CLI
@@ -41,13 +41,12 @@ agent-board list cards <board_id> [--status todo|in-progress|pending-review|done
 agent-board list cards <board_id> --tag blocked --tag needs-human  # Filter by tags (AND logic)
 agent-board list agents [--include-inactive]
 agent-board list comments <card_id>
-agent-board list checklists <card_id>
 
 # Create operations
 agent-board create board "Project Name" --description "Description"
 agent-board create card <board_id> "Task name" --description "Details" --status todo
 agent-board create agent [name] [--command stakpak] [--description "Agent purpose"]
-agent-board create checklist <card_id> --name "Subtasks" --item "Step 1" --item "Step 2"
+agent-board create checklist <card_id> --item "Step 1" --item "Step 2"  # Adds items to card's checklist
 agent-board create comment <card_id> "Progress update or notes"
 
 # Update operations
@@ -62,7 +61,6 @@ agent-board update checklist-item <item_id> --uncheck  # Mark incomplete
 agent-board delete board <board_id>
 agent-board delete card <card_id>
 agent-board delete agent <agent_id>
-agent-board delete checklist <checklist_id>
 agent-board delete comment <comment_id>
 agent-board delete checklist-item <item_id>
 
@@ -135,9 +133,8 @@ agent-board create board "Feature Development" --description "Q1 features"
 agent-board create card board_abc123 "Implement user authentication" \
   --description "Add OAuth2 login flow with Google and GitHub providers"
 
-# 3. Break down into subtasks
+# 3. Break down into subtasks (each card has one checklist)
 agent-board create checklist card_xyz789 \
-  --name "Implementation Steps" \
   --item "Set up OAuth client credentials" \
   --item "Create auth endpoints" \
   --item "Add session management" \
@@ -304,15 +301,17 @@ agent-board create comment card_123 "Ready for review: verify terraform plan"
 
 ### Cards vs Checklists
 
+Each card has a single checklist for tracking subtasks within that work item.
+
 | Use Cards | Use Checklists |
 |-----------|----------------|
 | Parallelizable work | Sequential steps in one deliverable |
 | Different dependencies | Shared dependencies |
-| Independent status tracking | Linear progress |
+| Independent status tracking | Linear progress within a card |
 
-**Simple task:** "Add Docker support" → One card with checklist (Dockerfile, compose, test, docs)
+**Simple task:** "Add Docker support" → One card with checklist items (Dockerfile, compose, test, docs)
 
-**Complex task:** "Migrate to microservices" → Multiple cards (auth service, payment service, API gateway, testing)
+**Complex task:** "Migrate to microservices" → Multiple cards (auth service, payment service, API gateway, testing), each with its own checklist
 
 ## Data Location
 
