@@ -18,7 +18,7 @@ tags:
   - rust
 metadata:
   author: Stakpak
-  version: "0.1.10"
+  version: "0.1.11"
 ---
 
 # Agent-Board CLI
@@ -87,22 +87,10 @@ cargo build --release  # Binary at ./target/release/agent-board
 
 ## Agent Identity
 
-Identity is **auto-created** when you use `--assign-to-me` or `--status in-progress`:
+Identity must be **explicitly registered** before using `--assign-to-me` or `--status in-progress`:
 
 ```bash
-# Just start working - identity created automatically
-agent-board update card card_xyz --status in-progress
-# Note: Created agent identity agent_abc123 for this session.
-#       To persist: export AGENT_BOARD_AGENT_ID=agent_abc123
-
-# Set the env var to persist across commands
-export AGENT_BOARD_AGENT_ID=agent_abc123
-```
-
-Or register explicitly:
-
-```bash
-# Register (auto-generates name like "swift-falcon")
+# 1. Register an agent (auto-generates name like "swift-falcon")
 agent-board create agent
 # Created agent: agent_abc123 (Name: swift-falcon)
 # To use this agent, run:
@@ -111,12 +99,17 @@ agent-board create agent
 # Or with explicit name
 agent-board create agent code-reviewer --command claude
 
-# Set identity for session
+# 2. Set identity for session (required before claiming cards)
 export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# 3. Now you can claim cards and set status
+agent-board update card card_xyz --status in-progress --assign-to-me
 
 # Verify identity (warns if wrong directory)
 agent-board whoami
 ```
+
+**Note:** Using `--assign-to-me` or `--status in-progress` without `AGENT_BOARD_AGENT_ID` set will error with setup instructions.
 
 Data stored in `~/.agent-board/data.db`. Override: `export AGENT_BOARD_DB_PATH=/path/data.db`
 

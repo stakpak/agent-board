@@ -102,20 +102,11 @@ cargo clippy
 
 ## Agent Identity System
 
-Agent identity is tracked via the `AGENT_BOARD_AGENT_ID` environment variable. Identity is **auto-created** when needed, or can be registered explicitly.
+Agent identity is tracked via the `AGENT_BOARD_AGENT_ID` environment variable. Identity must be **explicitly registered** before using features that require it.
 
-### Auto-Creation (Recommended)
+### Registration (Required)
 
-When using `--assign-to-me` or `--status in-progress` without an agent ID set, one is automatically created:
-
-```bash
-# Just start working - agent identity created automatically
-agent-board update card card_xxx --status in-progress
-# Note: Created agent identity agent_abc123 for this session.
-#       To persist: export AGENT_BOARD_AGENT_ID=agent_abc123
-```
-
-### Explicit Registration
+Using `--assign-to-me` or `--status in-progress` requires an existing agent identity:
 
 ```bash
 # Register a new agent (auto-generated name)
@@ -124,9 +115,14 @@ agent-board update card card_xxx --status in-progress
 # Register with explicit name
 ./target/debug/agent-board create agent code-reviewer --command claude --description "Reviews PRs"
 
-# Set identity for session
+# Set identity for session (required before using --assign-to-me or --status in-progress)
 export AGENT_BOARD_AGENT_ID=agent_abc123
+
+# Now you can claim cards
+./target/debug/agent-board update card card_xxx --status in-progress --assign-to-me
 ```
+
+If you try to use `--assign-to-me` or `--status in-progress` without setting `AGENT_BOARD_AGENT_ID`, you'll get an error with setup instructions.
 
 ### Agent Model
 - **id**: Unique identifier (e.g., `agent_abc123def456`)

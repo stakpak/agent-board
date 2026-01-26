@@ -223,63 +223,30 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                     (Some(s), _) if s == "null" => Some(None), // explicit unassign
                     (Some(s), _) => Some(Some(s.clone())),     // explicit assign
                     (None, true) => {
-                        // --assign-to-me flag: use current agent ID or auto-create
-                        let id = match std::env::var("AGENT_BOARD_AGENT_ID") {
-                            Ok(id) => id,
-                            Err(_) => {
-                                // Auto-create agent identity
-                                let cwd = std::env::current_dir()
-                                    .map_err(|e| {
-                                        AgentBoardError::General(format!(
-                                            "Failed to get current directory: {}",
-                                            e
-                                        ))
-                                    })?
-                                    .to_string_lossy()
-                                    .to_string();
-                                let agent = db
-                                    .register_agent(None, "stakpak".to_string(), cwd, None)
-                                    .await?;
-                                eprintln!(
-                                    "Note: Created agent identity {} for this session.",
-                                    agent.id
-                                );
-                                eprintln!("      To persist: export AGENT_BOARD_AGENT_ID={}", agent.id);
-                                agent.id
-                            }
-                        };
+                        // --assign-to-me flag: require existing agent identity
+                        let id = std::env::var("AGENT_BOARD_AGENT_ID").map_err(|_| {
+                            AgentBoardError::InvalidArgs(
+                                "No agent identity configured.\n\n\
+                                To use --assign-to-me, first set up your agent identity:\n  \
+                                1. Create an agent:  agent-board create agent\n  \
+                                2. Set the env var:  export AGENT_BOARD_AGENT_ID=<agent_id>"
+                                    .into(),
+                            )
+                        })?;
                         Some(Some(id))
                     }
                     (None, false) => {
                         // Use env var agent ID if status is being changed to in_progress
                         if status == Some(models::Status::InProgress) {
-                            let id = match std::env::var("AGENT_BOARD_AGENT_ID") {
-                                Ok(id) => id,
-                                Err(_) => {
-                                    // Auto-create agent identity
-                                    let cwd = std::env::current_dir()
-                                        .map_err(|e| {
-                                            AgentBoardError::General(format!(
-                                                "Failed to get current directory: {}",
-                                                e
-                                            ))
-                                        })?
-                                        .to_string_lossy()
-                                        .to_string();
-                                    let agent = db
-                                        .register_agent(None, "stakpak".to_string(), cwd, None)
-                                        .await?;
-                                    eprintln!(
-                                        "Note: Created agent identity {} for this session.",
-                                        agent.id
-                                    );
-                                    eprintln!(
-                                        "      To persist: export AGENT_BOARD_AGENT_ID={}",
-                                        agent.id
-                                    );
-                                    agent.id
-                                }
-                            };
+                            let id = std::env::var("AGENT_BOARD_AGENT_ID").map_err(|_| {
+                                AgentBoardError::InvalidArgs(
+                                    "No agent identity configured.\n\n\
+                                    Setting status to in-progress requires an agent identity:\n  \
+                                    1. Create an agent:  agent-board create agent\n  \
+                                    2. Set the env var:  export AGENT_BOARD_AGENT_ID=<agent_id>"
+                                        .into(),
+                                )
+                            })?;
                             Some(Some(id))
                         } else {
                             None // no change to assignment
