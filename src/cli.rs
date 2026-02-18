@@ -199,6 +199,10 @@ pub enum CreateCommands {
         /// Initial status
         #[arg(long, default_value = "todo")]
         status: Status,
+
+        /// Add tag (repeatable)
+        #[arg(long)]
+        add_tag: Vec<String>,
     },
 
     /// Register a new agent identity

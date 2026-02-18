@@ -702,6 +702,7 @@ impl Database {
         name: String,
         description: Option<String>,
         status: Status,
+        tags: Vec<String>,
     ) -> Result<Card, AgentBoardError> {
         // Verify board exists
         self.get_board(board_id).await?;
@@ -717,6 +718,16 @@ impl Database {
             )
             .await
             .map_err(|e| AgentBoardError::General(format!("Insert failed: {}", e)))?;
+
+        for tag in &tags {
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO card_tags (card_id, tag) VALUES (?1, ?2)",
+                    [id.as_str(), tag.as_str()],
+                )
+                .await
+                .map_err(|e| AgentBoardError::General(format!("Insert tag failed: {}", e)))?;
+        }
 
         self.get_card(&id).await
     }

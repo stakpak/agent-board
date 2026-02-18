@@ -149,8 +149,9 @@ async fn run(cli: Cli) -> Result<(), AgentBoardError> {
                 name,
                 description,
                 status,
+                add_tag,
             } => {
-                let card = db.create_card(&board_id, name, description, status).await?;
+                let card = db.create_card(&board_id, name, description, status, add_tag).await?;
                 if !quiet {
                     println!("Created card: {}", card.id);
                 }
